@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::iter::Peekable;
 use std::str::CharIndices;
 
+const RECURSIVE_LIMIT: usize = 1000;
+
 #[derive(Debug, Clone)]
 pub enum Value<'a> {
     String(Cow<'a, str>),
@@ -51,6 +53,7 @@ impl<'a> Value<'a> {
 }
 
 struct Parser<'a> {
+    recursion_depth: usize,
     source: &'a str,
     iter: Peekable<CharIndices<'a>>,
 }
@@ -85,7 +88,17 @@ impl<'a> Parser<'a> {
                         Some((_, 'f')) => string.to_mut().push('\x0C'),
                         Some((_, 'r')) => string.to_mut().push('\r'),
                         Some((_, 't')) => string.to_mut().push('\t'),
-                        Some((_, 'u')) => unimplemented!(),
+                        Some((_, 'u')) => {
+                            /*
+                            let b0 = self.iter.next()?.1;
+                            let b1 = self.iter.next()?.1;
+                            let b2 = self.iter.next()?.1;
+                            let b3 = self.iter.next()?.1;
+                            */
+
+                            // Not yet implemented
+                            return None;
+                        }
                         _ => return None,
                     }
                 }
@@ -150,7 +163,6 @@ impl<'a> Parser<'a> {
                     break;
                 }
                 None => {
-                    println!("HERE: {:?}", self.iter.peek());
                     return None;
                 }
                 _ => {}
@@ -188,7 +200,7 @@ impl<'a> Parser<'a> {
                 }
                 break;
             },
-            _ => unimplemented!(),
+            _ => None?,
         }
 
         let mut position = 10.0;
@@ -215,7 +227,8 @@ impl<'a> Parser<'a> {
         // Parse exponent
         match self.iter.peek() {
             Some((_, 'e')) | Some((_, 'E')) => {
-                unimplemented!();
+                // Unimplemented
+                return None;
                 // Parse fraction
                 /*
                 self.iter.next();
@@ -239,6 +252,12 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_value(&mut self) -> Option<Value<'a>> {
+        self.recursion_depth += 1;
+        if self.recursion_depth > RECURSIVE_LIMIT {
+            return None;
+        }
+        self.skip_whitespace();
+
         Some(match self.iter.peek() {
             Some((_, '{')) => {
                 self.iter.next();
@@ -286,8 +305,9 @@ impl<'a> Parser<'a> {
         })
     }
 }
-pub fn parse_to_json<'a>(source: &'a str) -> Option<Value<'a>> {
+pub fn from_str<'a>(source: &'a str) -> Option<Value<'a>> {
     let mut parser = Parser {
+        recursion_depth: 0,
         source,
         iter: source.char_indices().peekable(),
     };
