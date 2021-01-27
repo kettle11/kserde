@@ -31,7 +31,6 @@ fn encode_value(s: &mut String, indentation: u16, value: &Value) {
         Value::Array(values) => {
             s.push('[');
             for value in values {
-                println!("VALUE");
                 encode_value(s, indentation, value);
                 s.push_str(", ");
             }
