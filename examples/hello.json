@@ -4,5 +4,10 @@
     "number": 1729,
     "array": [0, 1, 2, 3],
     "null": null,
-    "bool": true
+    "bool": true,
+    "object": {
+        "member0": 0,
+        "member1": false,
+        "member3": [1000]
+    }
 }
