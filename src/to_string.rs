@@ -19,20 +19,26 @@ fn encode_value(s: &mut String, indentation: u16, value: &Value) {
                 s.push(',');
                 s.push('\n');
             }
-            s.pop(); // Pop extra comma and newline
             s.pop();
-            s.push('\n');
-            indent(s, indentation);
+
+            if values.len() > 0 {
+                s.pop(); // Pop extra comma and newline. This is incorrect for empty objects.
+                s.push('\n');
+                indent(s, indentation);
+            }
             s.push_str("}");
         }
         Value::Array(values) => {
             s.push('[');
             for value in values {
+                println!("VALUE");
                 encode_value(s, indentation, value);
                 s.push_str(", ");
             }
-            s.pop(); // Pop extra comma and space
-            s.pop();
+            if values.len() > 0 {
+                s.pop(); // Pop extra comma and space This is incorrect for empty objects.
+                s.pop();
+            }
             s.push(']');
         }
         Value::String(s0) => {
@@ -46,10 +52,4 @@ fn encode_value(s: &mut String, indentation: u16, value: &Value) {
         Value::Boolean(false) => s.push_str("false"),
         Value::Null => s.push_str("null"),
     }
-}
-
-pub fn to_string(value: &Value) -> String {
-    let mut s = String::new();
-    encode_value(&mut s, 0, value);
-    s
 }
