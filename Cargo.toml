@@ -3,15 +3,8 @@ name = "kjson"
 version = "0.1.0"
 authors = ["Ian Kettlewell <ian.kettlewell@gmail.com>"]
 edition = "2018"
+exclude = ["tests/*", "examples/*"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-
-# [dev-dependencies]
-# bencher = "0.1.5"
-# serde_json = "1.0.61"
-
-# [[bench]]
-# name = "bench"
-# harness = false

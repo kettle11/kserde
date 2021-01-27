@@ -1,7 +1,7 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::iter::Peekable;
 use std::str::CharIndices;
+use std::{borrow::Cow, char::from_u32};
 
 const RECURSIVE_LIMIT: usize = 1000;
 
@@ -79,25 +79,21 @@ impl<'a> Parser<'a> {
                 Some((_, '"')) => break,
                 Some((_, '\\')) => {
                     owned = true;
-                    match self.iter.next() {
-                        Some((_, '\"')) => string.to_mut().push('"'),
-                        Some((_, '/')) => string.to_mut().push('/'),
-                        Some((_, '\\')) => string.to_mut().push('\\'),
-                        Some((_, 'n')) => string.to_mut().push('\n'),
-                        Some((_, 'b')) => string.to_mut().push('\x08'),
-                        Some((_, 'f')) => string.to_mut().push('\x0C'),
-                        Some((_, 'r')) => string.to_mut().push('\r'),
-                        Some((_, 't')) => string.to_mut().push('\t'),
-                        Some((_, 'u')) => {
-                            /*
-                            let b0 = self.iter.next()?.1;
-                            let b1 = self.iter.next()?.1;
-                            let b2 = self.iter.next()?.1;
-                            let b3 = self.iter.next()?.1;
-                            */
-
-                            // Not yet implemented
-                            return None;
+                    let next = self.iter.next()?;
+                    match next.1 {
+                        '\"' => string.to_mut().push('"'),
+                        '/' => string.to_mut().push('/'),
+                        '\\' => string.to_mut().push('\\'),
+                        'n' => string.to_mut().push('\n'),
+                        'b' => string.to_mut().push('\x08'),
+                        'f' => string.to_mut().push('\x0C'),
+                        'r' => string.to_mut().push('\r'),
+                        't' => string.to_mut().push('\t'),
+                        'u' => {
+                            let slice = self.source.get(next.0 + 1..next.0 + 5)?;
+                            let u = u32::from_str_radix(slice, 16).ok()?;
+                            let c = std::char::from_u32(u)?;
+                            string.to_mut().push(c);
                         }
                         _ => return None,
                     }
@@ -185,11 +181,11 @@ impl<'a> Parser<'a> {
 
         let mut number = 0.0;
 
-        match self.iter.peek() {
-            Some((_, '0')) => {
+        match self.iter.peek()?.1 {
+            '0' => {
                 self.iter.next();
             }
-            Some((_, c)) if c.is_ascii_digit() => loop {
+            c if c.is_ascii_digit() => loop {
                 if let Some((_, c)) = self.iter.peek().cloned() {
                     if let Some(digit) = c.to_digit(10) {
                         number *= 10.;
@@ -200,7 +196,7 @@ impl<'a> Parser<'a> {
                 }
                 break;
             },
-            _ => None?,
+            _ => return None,
         }
 
         let mut position = 10.0;
@@ -258,20 +254,20 @@ impl<'a> Parser<'a> {
         }
         self.skip_whitespace();
 
-        Some(match self.iter.peek() {
-            Some((_, '{')) => {
+        Some(match self.iter.peek()?.1 {
+            '{' => {
                 self.iter.next();
                 Value::Object(self.parse_object()?)
             }
-            Some((_, '[')) => {
+            '[' => {
                 self.iter.next();
                 Value::Array(self.parse_array()?)
             }
-            Some((_, '"')) => {
+            '"' => {
                 Value::String(self.parse_string()?)
                 // Parse String
             }
-            Some((_, 't')) => {
+            't' => {
                 // Parse true
                 // For now just assume all the characters are correct
                 for _ in 0..4 {
@@ -279,7 +275,7 @@ impl<'a> Parser<'a> {
                 }
                 Value::Boolean(true)
             }
-            Some((_, 'f')) => {
+            'f' => {
                 // Parse false
                 // For now just assume all the characters are correct
                 for _ in 0..5 {
@@ -287,8 +283,7 @@ impl<'a> Parser<'a> {
                 }
                 Value::Boolean(true)
             }
-
-            Some((_, 'n')) => {
+            'n' => {
                 // Parse null
                 // For now just assume all the characters are correct
                 for _ in 0..4 {
@@ -296,11 +291,11 @@ impl<'a> Parser<'a> {
                 }
                 Value::Boolean(true)
             }
-            Some((_, '-')) => {
+            '-' => {
                 // Parse negative number
                 Value::Number(self.parse_number()?)
             }
-            Some((_, c)) if c.is_ascii_digit() => Value::Number(self.parse_number()?),
+            c if c.is_ascii_digit() => Value::Number(self.parse_number()?),
             _ => return None,
         })
     }

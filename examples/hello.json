@@ -1,0 +1,8 @@
+{
+    "string": "Mesh Primitive",
+    "character": "Hello नमस्ते Hola こんにちは",
+    "number": 1729,
+    "array": [0, 1, 2, 3],
+    "null": null,
+    "bool": true
+}
