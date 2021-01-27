@@ -1,7 +1,7 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::iter::Peekable;
 use std::str::CharIndices;
-use std::{borrow::Cow, char::from_u32};
 
 const RECURSIVE_LIMIT: usize = 1000;
 
@@ -92,7 +92,35 @@ impl<'a> Parser<'a> {
                         'u' => {
                             let slice = self.source.get(next.0 + 1..next.0 + 5)?;
                             let u = u32::from_str_radix(slice, 16).ok()?;
-                            let c = std::char::from_u32(u)?;
+                            for _ in 0..4 {
+                                self.iter.next();
+                            }
+
+                            let c = match u {
+                                0xD800..=0xDBFF => {
+                                    // This is a non-Basic Multilingual Plane (BMP) character
+                                    // so it's encoded as two code points.
+
+                                    // Skip the '\u'
+                                    self.iter.next()?;
+                                    let (start, _) = self.iter.next()?;
+
+                                    let slice = self.source.get(start + 1..start + 5)?;
+                                    let u1 = u32::from_str_radix(slice, 16).ok()?;
+                                    if u1 < 0xDC00 || u1 > 0xDFFF {
+                                        return None;
+                                    }
+                                    let n = (u32::from(u - 0xD800) << 10 | u32::from(u1 - 0xDC00))
+                                        + 0x1_0000;
+
+                                    for _ in 0..4 {
+                                        self.iter.next();
+                                    }
+                                    std::char::from_u32(n)?
+                                }
+                                _ => std::char::from_u32(u)?,
+                            };
+
                             string.to_mut().push(c);
                         }
                         _ => return None,
@@ -223,20 +251,40 @@ impl<'a> Parser<'a> {
         // Parse exponent
         match self.iter.peek() {
             Some((_, 'e')) | Some((_, 'E')) => {
-                // Unimplemented
-                return None;
-                // Parse fraction
-                /*
                 self.iter.next();
+                let sign = match self.iter.peek()?.1 {
+                    '-' => {
+                        self.iter.next();
+                        -1.
+                    }
+                    '+' => {
+                        self.iter.next();
+                        1.
+                    }
+                    _ => 1.,
+                };
 
-                match self.iter.next() {
-                    Some((_, '-')) => {}
-                    Some((_, '+')) => {}
+                let mut exponent = 0.0;
+                match self.iter.peek()?.1 {
+                    // Are leading 0s for the exponents really something that happens?
+                    '0' => {
+                        self.iter.next();
+                    }
+                    c if c.is_ascii_digit() => loop {
+                        if let Some((_, c)) = self.iter.peek().cloned() {
+                            if let Some(digit) = c.to_digit(10) {
+                                exponent *= 10.;
+                                exponent += digit as f64;
+                                self.iter.next();
+                                continue;
+                            }
+                        }
+                        break;
+                    },
                     _ => return None,
                 }
 
-                while self.iter.next().map_or(false, |(_, c)| c.is_ascii_digit()) {}
-                */
+                number = number.powf(exponent * sign);
             }
             _ => {}
         }
