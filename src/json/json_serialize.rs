@@ -1,57 +1,6 @@
 use crate::*;
+use std::borrow::Borrow;
 use std::iter::Iterator;
-fn indent(s: &mut String, amount: u16) {
-    s.extend((0..amount).map(|_| ' '))
-}
-
-fn encode_value(s: &mut String, indentation: u16, value: &Value) {
-    match value {
-        Value::Object(values) => {
-            s.push_str("{\n");
-            let indentation_inner = indentation + 4;
-            for (key, value) in values {
-                indent(s, indentation_inner);
-                s.push('\"');
-                s.push_str(key);
-                s.push('\"');
-                s.push_str(": ");
-                encode_value(s, indentation_inner, value);
-                s.push(',');
-                s.push('\n');
-            }
-            s.pop();
-
-            if values.len() > 0 {
-                s.pop(); // Pop extra comma and newline. This is incorrect for empty objects.
-                s.push('\n');
-                indent(s, indentation);
-            }
-            s.push_str("}");
-        }
-        Value::Array(values) => {
-            s.push('[');
-            for value in values {
-                encode_value(s, indentation, value);
-                s.push_str(", ");
-            }
-            if values.len() > 0 {
-                s.pop(); // Pop extra comma and space This is incorrect for empty objects.
-                s.pop();
-            }
-            s.push(']');
-        }
-        Value::String(s0) => {
-            s.push('\"');
-            s.push_str(s0);
-            s.push('\"');
-        }
-        // Potentially unnecessary heap allocation?
-        Value::Number(n) => s.push_str(&n.to_string()),
-        Value::Boolean(true) => s.push_str("true"),
-        Value::Boolean(false) => s.push_str("false"),
-        Value::Null => s.push_str("null"),
-    }
-}
 
 pub struct JSONSerializer {
     s: String,
@@ -73,21 +22,24 @@ impl JSONSerializer {
 
 impl Serializer for JSONSerializer {
     type Result = String;
-    fn object<K: Serialize, S: Serialize, I: IntoIterator<Item = (S, S)>>(&mut self, members: I) {
+    fn object<'a, S: Serialize + 'a, I: IntoIterator<Item = (&'a str, &'a S)>>(
+        &mut self,
+        members: I,
+    ) {
         self.s.push_str("{\n");
         self.indentation += 4;
         let mut more_than_one_item = false;
         for (key, value) in members {
             self.indent();
-            self.s.push('\"');
             key.serialize(self);
-            self.s.push('\"');
             self.s.push_str(": ");
             value.serialize(self);
             self.s.push(',');
             self.s.push('\n');
             more_than_one_item = true;
         }
+        self.indentation -= 4;
+
         self.s.pop();
 
         if more_than_one_item {
@@ -139,61 +91,29 @@ impl Serializer for JSONSerializer {
         self.s
     }
 }
-/*
+
 impl<'a> Serialize for Value<'a> {
     fn serialize<E: Serializer>(&self, serializer: &mut E) {
         match self {
-            Value::Object(values) => {
-                s.push_str("{\n");
-                let indentation_inner = indentation + 4;
-                for (key, value) in values {
-                    indent(s, indentation_inner);
-                    s.push('\"');
-                    s.push_str(key);
-                    s.push('\"');
-                    s.push_str(": ");
-                    encode_value(s, indentation_inner, value);
-                    s.push(',');
-                    s.push('\n');
-                }
-                s.pop();
-
-                if values.len() > 0 {
-                    s.pop(); // Pop extra comma and newline. This is incorrect for empty objects.
-                    s.push('\n');
-                    indent(s, indentation);
-                }
-                s.push_str("}");
-            }
+            Value::Object(values) => serializer.object(values.iter().map(|(k, v)| (k.borrow(), v))),
             Value::Array(values) => {
-                s.push('[');
-                for value in values {
-                    encode_value(s, indentation, value);
-                    s.push_str(", ");
-                }
-                if values.len() > 0 {
-                    s.pop(); // Pop extra comma and space This is incorrect for empty objects.
-                    s.pop();
-                }
-                s.push(']');
+                serializer.array(values);
             }
             Value::String(s0) => {
-                s.push('\"');
-                s.push_str(s0);
-                s.push('\"');
+                serializer.string(s0);
             }
             // Potentially unnecessary heap allocation?
-            Value::Number(n) => s.push_str(&n.to_string()),
-            Value::Boolean(true) => s.push_str("true"),
-            Value::Boolean(false) => s.push_str("false"),
-            Value::Null => s.push_str("null"),
+            Value::Number(n) => serializer.f64(*n),
+            Value::Boolean(b) => serializer.bool(*b),
+
+            // This is incorrect as it should not have quotes in JSON.
+            Value::Null => serializer.string("null"),
         }
     }
 }
-*/
 
-pub fn to_string(value: &Value) -> String {
-    let mut s = String::new();
-    encode_value(&mut s, 0, value);
-    s
+pub fn to_json_string<V: Serialize>(value: &V) -> String {
+    let mut serializer = JSONSerializer::new();
+    value.serialize(&mut serializer);
+    serializer.done()
 }
