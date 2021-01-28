@@ -2,10 +2,7 @@ use std::collections::HashMap;
 
 pub trait Serializer {
     type Result;
-    fn object<'a, S: Serialize + 'a, I: IntoIterator<Item = (&'a str, &'a S)>>(
-        &mut self,
-        members: I,
-    );
+    fn map<'a, S: Serialize + 'a, I: IntoIterator<Item = (&'a str, &'a S)>>(&mut self, members: I);
     fn array<'a, S: Serialize + 'a, I: IntoIterator<Item = &'a S>>(&mut self, values: I);
     fn string(&mut self, s: &str);
     fn bool(&mut self, b: bool);
@@ -45,13 +42,6 @@ impl Serialize for bool {
     }
 }
 
-/*
-impl<S: Serialize> Serialize for &S {
-    #[inline]
-    fn serialize<E: Serializer>(&self, serializer: &mut E) {}
-}
-*/
-
 impl<S: Serialize> Serialize for [S] {
     #[inline]
     fn serialize<E: Serializer>(&self, serializer: &mut E) {
@@ -62,13 +52,13 @@ impl<S: Serialize> Serialize for [S] {
 impl<S: Serialize> Serialize for HashMap<&str, S> {
     #[inline]
     fn serialize<E: Serializer>(&self, serializer: &mut E) {
-        serializer.object(self.iter().map(|(k, v)| (*k, v)))
+        serializer.map(self.iter().map(|(k, v)| (*k, v)))
     }
 }
 
 impl<S: Serialize> Serialize for HashMap<String, S> {
     #[inline]
     fn serialize<E: Serializer>(&self, serializer: &mut E) {
-        serializer.object(self.iter().map(|(k, v)| (k.as_str(), v)))
+        serializer.map(self.iter().map(|(k, v)| (k.as_str(), v)))
     }
 }

@@ -22,10 +22,7 @@ impl JSONSerializer {
 
 impl Serializer for JSONSerializer {
     type Result = String;
-    fn object<'a, S: Serialize + 'a, I: IntoIterator<Item = (&'a str, &'a S)>>(
-        &mut self,
-        members: I,
-    ) {
+    fn map<'a, S: Serialize + 'a, I: IntoIterator<Item = (&'a str, &'a S)>>(&mut self, members: I) {
         self.s.push_str("{\n");
         self.indentation += 4;
         let mut more_than_one_item = false;
@@ -95,7 +92,7 @@ impl Serializer for JSONSerializer {
 impl<'a> Serialize for Value<'a> {
     fn serialize<E: Serializer>(&self, serializer: &mut E) {
         match self {
-            Value::Object(values) => serializer.object(values.iter().map(|(k, v)| (k.borrow(), v))),
+            Value::Object(values) => serializer.map(values.iter().map(|(k, v)| (k.borrow(), v))),
             Value::Array(values) => {
                 serializer.array(values);
             }
