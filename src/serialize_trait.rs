@@ -7,6 +7,7 @@ pub trait Serializer: for<'a> AsObjectSerializer<'a> + for<'a> AsArraySerializer
     fn bool(&mut self, b: bool);
     fn i64(&mut self, i: i64);
     fn f64(&mut self, n: f64);
+    fn null(&mut self);
     fn done(self) -> Self::Result;
 }
 
@@ -79,5 +80,17 @@ impl<S: std::ops::Deref<Target = str>, V: Serialize> Serialize for HashMap<S, V>
             object_serializer.property(key, value);
         }
         object_serializer.end_object();
+    }
+}
+
+// Maybe this should be part of the serializer itself.
+impl<S: Serialize> Serialize for Option<S> {
+    #[inline]
+    fn serialize<E: Serializer>(&self, serializer: &mut E) {
+        if let Some(s) = self {
+            s.serialize(serializer);
+        } else {
+            serializer.null()
+        }
     }
 }

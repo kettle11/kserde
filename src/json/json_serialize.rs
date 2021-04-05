@@ -6,60 +6,6 @@ pub struct JSONSerializer {
     indentation: u16,
 }
 
-pub struct JSONObjectSerializer<'a> {
-    need_to_pop_comma: bool,
-    serializer: &'a mut JSONSerializer,
-}
-
-impl<'a> ObjectSerializer for JSONObjectSerializer<'a> {
-    fn property<V: Serialize>(&mut self, name: &str, value: &V) {
-        let serializer = &mut self.serializer;
-        serializer.indent();
-        name.serialize(*serializer);
-        serializer.s.push_str(": ");
-        value.serialize(*serializer);
-        serializer.s.push(',');
-        serializer.s.push('\n');
-        self.need_to_pop_comma = true;
-        value.serialize(self.serializer)
-    }
-
-    fn end_object(self) {
-        let serializer = self.serializer;
-        serializer.indentation -= 4;
-        serializer.s.pop();
-
-        if self.need_to_pop_comma {
-            serializer.s.pop();
-            serializer.s.push('\n');
-            serializer.indent()
-        }
-        serializer.s.push_str("}");
-    }
-}
-
-pub struct JSONArraySerializer<'a> {
-    need_to_pop_comma: bool,
-    serializer: &'a mut JSONSerializer,
-}
-
-impl<'a> ArraySerializer for JSONArraySerializer<'a> {
-    fn value<V: Serialize>(&mut self, value: &V) {
-        value.serialize(self.serializer);
-        self.serializer.s.push(',');
-        self.serializer.s.push(' ');
-        self.need_to_pop_comma = true;
-    }
-
-    fn end_array(self) {
-        if self.need_to_pop_comma {
-            self.serializer.s.pop();
-            self.serializer.s.pop();
-        }
-        self.serializer.s.push(']');
-    }
-}
-
 impl JSONSerializer {
     fn indent(&mut self) {
         self.s.extend((0..self.indentation).map(|_| ' '))
@@ -98,9 +44,18 @@ impl Serializer for JSONSerializer {
         self.s.push('\"');
     }
 
+    fn null(&mut self) {
+        self.s.push_str("null");
+    }
+
     fn done(self) -> Self::Result {
         self.s
     }
+}
+
+pub struct JSONObjectSerializer<'a> {
+    need_to_pop_comma: bool,
+    serializer: &'a mut JSONSerializer,
 }
 
 impl<'a> AsObjectSerializer<'a> for JSONSerializer {
@@ -115,6 +70,37 @@ impl<'a> AsObjectSerializer<'a> for JSONSerializer {
     }
 }
 
+impl<'a> ObjectSerializer for JSONObjectSerializer<'a> {
+    fn property<V: Serialize>(&mut self, name: &str, value: &V) {
+        let serializer = &mut self.serializer;
+        serializer.indent();
+        name.serialize(*serializer);
+        serializer.s.push_str(": ");
+        value.serialize(*serializer);
+        serializer.s.push_str(", ");
+        self.need_to_pop_comma = true;
+        value.serialize(self.serializer)
+    }
+
+    fn end_object(self) {
+        let serializer = self.serializer;
+        serializer.indentation -= 4;
+        serializer.s.pop();
+
+        if self.need_to_pop_comma {
+            serializer.s.pop();
+            serializer.s.push('\n');
+            serializer.indent()
+        }
+        serializer.s.push_str("}");
+    }
+}
+
+pub struct JSONArraySerializer<'a> {
+    need_to_pop_comma: bool,
+    serializer: &'a mut JSONSerializer,
+}
+
 impl<'a> AsArraySerializer<'a> for JSONSerializer {
     type ArraySerializer = JSONArraySerializer<'a>;
     fn begin_array(&'a mut self) -> Self::ArraySerializer {
@@ -123,6 +109,23 @@ impl<'a> AsArraySerializer<'a> for JSONSerializer {
             need_to_pop_comma: false,
             serializer: self,
         }
+    }
+}
+
+impl<'a> ArraySerializer for JSONArraySerializer<'a> {
+    fn value<V: Serialize>(&mut self, value: &V) {
+        value.serialize(self.serializer);
+        self.serializer.s.push(',');
+        self.serializer.s.push(' ');
+        self.need_to_pop_comma = true;
+    }
+
+    fn end_array(self) {
+        if self.need_to_pop_comma {
+            self.serializer.s.pop();
+            self.serializer.s.pop();
+        }
+        self.serializer.s.push(']');
     }
 }
 
