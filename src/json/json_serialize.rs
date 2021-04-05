@@ -1,5 +1,4 @@
 use crate::*;
-use std::borrow::Borrow;
 use std::iter::Iterator;
 
 pub struct JSONSerializer {
@@ -7,60 +6,75 @@ pub struct JSONSerializer {
     indentation: u16,
 }
 
-impl JSONSerializer {
-    pub fn new() -> Self {
-        Self {
-            s: String::new(),
-            indentation: 0,
-        }
+pub struct JSONObjectSerializer<'a> {
+    need_to_pop_comma: bool,
+    serializer: &'a mut JSONSerializer,
+}
+
+impl<'a> ObjectSerializer for JSONObjectSerializer<'a> {
+    fn property<V: Serialize>(&mut self, name: &str, value: &V) {
+        let serializer = &mut self.serializer;
+        serializer.indent();
+        name.serialize(*serializer);
+        serializer.s.push_str(": ");
+        value.serialize(*serializer);
+        serializer.s.push(',');
+        serializer.s.push('\n');
+        self.need_to_pop_comma = true;
+        value.serialize(self.serializer)
     }
 
+    fn end_object(self) {
+        let serializer = self.serializer;
+        serializer.indentation -= 4;
+        serializer.s.pop();
+
+        if self.need_to_pop_comma {
+            serializer.s.pop();
+            serializer.s.push('\n');
+            serializer.indent()
+        }
+        serializer.s.push_str("}");
+    }
+}
+
+pub struct JSONArraySerializer<'a> {
+    need_to_pop_comma: bool,
+    serializer: &'a mut JSONSerializer,
+}
+
+impl<'a> ArraySerializer for JSONArraySerializer<'a> {
+    fn value<V: Serialize>(&mut self, value: &V) {
+        value.serialize(self.serializer);
+        self.serializer.s.push(',');
+        self.serializer.s.push(' ');
+        self.need_to_pop_comma = true;
+    }
+
+    fn end_array(self) {
+        if self.need_to_pop_comma {
+            self.serializer.s.pop();
+            self.serializer.s.pop();
+        }
+        self.serializer.s.push(']');
+    }
+}
+
+impl JSONSerializer {
     fn indent(&mut self) {
         self.s.extend((0..self.indentation).map(|_| ' '))
     }
 }
 
 impl Serializer for JSONSerializer {
+    fn new() -> Self {
+        Self {
+            s: String::new(),
+            indentation: 0,
+        }
+    }
+
     type Result = String;
-    fn map<'a, S: Serialize + 'a, I: IntoIterator<Item = (&'a str, &'a S)>>(&mut self, members: I) {
-        self.s.push_str("{\n");
-        self.indentation += 4;
-        let mut more_than_one_item = false;
-        for (key, value) in members {
-            self.indent();
-            key.serialize(self);
-            self.s.push_str(": ");
-            value.serialize(self);
-            self.s.push(',');
-            self.s.push('\n');
-            more_than_one_item = true;
-        }
-        self.indentation -= 4;
-
-        self.s.pop();
-
-        if more_than_one_item {
-            self.s.pop(); // Pop extra comma and newline. This is incorrect for empty objects.
-            self.s.push('\n');
-            self.indent()
-        }
-        self.s.push_str("}");
-    }
-
-    fn array<'a, S: Serialize + 'a, I: IntoIterator<Item = &'a S>>(&mut self, values: I) {
-        self.s.push('[');
-        let mut more_than_one_value = false;
-        for value in values {
-            value.serialize(self);
-            self.s.push_str(", ");
-            more_than_one_value = true;
-        }
-        if more_than_one_value {
-            self.s.pop(); // Pop extra comma and space This is incorrect for empty objects.
-            self.s.pop();
-        }
-        self.s.push(']');
-    }
 
     fn f64(&mut self, n: f64) {
         self.s.push_str(&n.to_string())
@@ -89,22 +103,25 @@ impl Serializer for JSONSerializer {
     }
 }
 
-impl<'a> Serialize for Value<'a> {
-    fn serialize<E: Serializer>(&self, serializer: &mut E) {
-        match self {
-            Value::Object(values) => serializer.map(values.iter().map(|(k, v)| (k.borrow(), v))),
-            Value::Array(values) => {
-                serializer.array(values);
-            }
-            Value::String(s0) => {
-                serializer.string(s0);
-            }
-            // Potentially unnecessary heap allocation?
-            Value::Number(n) => serializer.f64(*n),
-            Value::Boolean(b) => serializer.bool(*b),
+impl<'a> AsObjectSerializer<'a> for JSONSerializer {
+    type ObjectSerializer = JSONObjectSerializer<'a>;
+    fn begin_object(&'a mut self) -> Self::ObjectSerializer {
+        self.s.push_str("{\n");
+        self.indentation += 4;
+        JSONObjectSerializer {
+            need_to_pop_comma: false,
+            serializer: self,
+        }
+    }
+}
 
-            // This is incorrect as it should not have quotes in JSON.
-            Value::Null => serializer.string("null"),
+impl<'a> AsArraySerializer<'a> for JSONSerializer {
+    type ArraySerializer = JSONArraySerializer<'a>;
+    fn begin_array(&'a mut self) -> Self::ArraySerializer {
+        self.s.push_str("[");
+        JSONArraySerializer {
+            need_to_pop_comma: false,
+            serializer: self,
         }
     }
 }

@@ -15,7 +15,7 @@ fn json_test_suite() {
 
         let source = std::fs::read_to_string(path);
         if let Ok(source) = source {
-            let json = kserialize::from_str(&source);
+            let json = kjson::from_str(&source);
 
             if file_name.starts_with("y_") {
                 assert!(json.is_some(), "Unexpected failure for: {}", path);
@@ -24,7 +24,7 @@ fn json_test_suite() {
             if file_name.starts_with("n_") && json.is_some() {
                 // kjson is more permissive.
                 // For json that should fail but does not is ignored.
-                //  assert!(json.is_none(), "Unexpected success for: {}", path);
+                // assert!(json.is_none(), "Unexpected success for: {}", path);
             }
         }
     }

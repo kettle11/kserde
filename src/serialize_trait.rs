@@ -1,14 +1,33 @@
 use std::collections::HashMap;
 
-pub trait Serializer {
+pub trait Serializer: for<'a> AsObjectSerializer<'a> + for<'a> AsArraySerializer<'a> {
     type Result;
-    fn map<'a, S: Serialize + 'a, I: IntoIterator<Item = (&'a str, &'a S)>>(&mut self, members: I);
-    fn array<'a, S: Serialize + 'a, I: IntoIterator<Item = &'a S>>(&mut self, values: I);
+    fn new() -> Self;
     fn string(&mut self, s: &str);
     fn bool(&mut self, b: bool);
     fn i64(&mut self, i: i64);
     fn f64(&mut self, n: f64);
     fn done(self) -> Self::Result;
+}
+
+pub trait AsObjectSerializer<'a> {
+    type ObjectSerializer: ObjectSerializer;
+    fn begin_object(&'a mut self) -> Self::ObjectSerializer;
+}
+
+pub trait AsArraySerializer<'a> {
+    type ArraySerializer: ArraySerializer;
+    fn begin_array(&'a mut self) -> Self::ArraySerializer;
+}
+
+pub trait ObjectSerializer {
+    fn property<V: Serialize>(&mut self, name: &str, value: &V);
+    fn end_object(self);
+}
+
+pub trait ArraySerializer {
+    fn value<V: Serialize>(&mut self, value: &V);
+    fn end_array(self);
 }
 
 pub trait Serialize {
@@ -45,20 +64,20 @@ impl Serialize for bool {
 impl<S: Serialize> Serialize for [S] {
     #[inline]
     fn serialize<E: Serializer>(&self, serializer: &mut E) {
-        serializer.array(self)
+        let mut array_serializer = serializer.begin_array();
+        for value in self.into_iter() {
+            array_serializer.value(value);
+        }
+        array_serializer.end_array();
     }
 }
 
-impl<S: Serialize> Serialize for HashMap<&str, S> {
-    #[inline]
+impl<S: std::ops::Deref<Target = str>, V: Serialize> Serialize for HashMap<S, V> {
     fn serialize<E: Serializer>(&self, serializer: &mut E) {
-        serializer.map(self.iter().map(|(k, v)| (*k, v)))
-    }
-}
-
-impl<S: Serialize> Serialize for HashMap<String, S> {
-    #[inline]
-    fn serialize<E: Serializer>(&self, serializer: &mut E) {
-        serializer.map(self.iter().map(|(k, v)| (k.as_str(), v)))
+        let mut object_serializer = serializer.begin_object();
+        for (key, value) in self.into_iter() {
+            object_serializer.property(key, value);
+        }
+        object_serializer.end_object();
     }
 }
