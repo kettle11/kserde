@@ -1,32 +1,92 @@
-use crate::{AnyValue, Deserializer, ObjectDeserializer};
+use crate::{AnyValue, Deserializer};
 use std::borrow::Cow;
 use std::iter::Peekable;
 use std::str::CharIndices;
 
-// const RECURSIVE_LIMIT: usize = 1024;
+const RECURSIVE_LIMIT: usize = 1024;
 
 #[derive(Clone)]
 pub struct JSONDeserializer<'a> {
+    recursive_depth: usize,
     source: &'a str,
     iter: Peekable<CharIndices<'a>>,
 }
 
-impl<'a> Deserializer<'a> for JSONDeserializer<'a> {
-    type ObjectDeserializer = JSONObjectDeserializer<'a>;
+impl<'a> JSONDeserializer<'a> {
+    pub fn new(source: &'a str) -> Self {
+        Self {
+            recursive_depth: 0,
+            iter: source.char_indices().peekable(),
+            source,
+        }
+    }
+}
 
+impl<'a> Deserializer<'a> for JSONDeserializer<'a> {
     fn string(&mut self) -> Option<Cow<'a, str>> {
+        self.skip_whitespace();
         self.parse_string()
     }
 
     fn bool(&mut self) -> Option<bool> {
+        self.skip_whitespace();
         Some(match self.iter.next()?.1 {
+            't' => {
+                for _ in 0..4 {
+                    self.iter.next()?;
+                }
+                true
+            }
+            'f' => {
+                for _ in 0..5 {
+                    self.iter.next()?;
+                }
+                false
+            }
+            _ => None?,
+        })
+    }
+
+    fn i64(&mut self) -> Option<i64> {
+        self.skip_whitespace();
+        self.parse_number().map(|f| f as i64)
+    }
+
+    fn f64(&mut self) -> Option<f64> {
+        self.skip_whitespace();
+        self.parse_number()
+    }
+
+    fn any<'b>(&'b mut self) -> Option<AnyValue<'a>> {
+        println!("PEEK: {:?}", self.iter.peek());
+        self.skip_whitespace();
+        println!("PEEK: {:?}", self.iter.peek());
+
+        Some(match self.iter.peek()?.1 {
+            '{' => {
+                self.iter.next();
+                if self.recursive_depth >= RECURSIVE_LIMIT {
+                    return None;
+                }
+                self.recursive_depth += 1;
+                AnyValue::Object
+            }
+            '[' => {
+                self.iter.next();
+                if self.recursive_depth >= RECURSIVE_LIMIT {
+                    return None;
+                }
+                self.recursive_depth += 1;
+                AnyValue::Array
+            }
+            '"' => AnyValue::String(self.parse_string()?),
             't' => {
                 // Parse true
                 // For now just assume all the characters are correct
                 for _ in 0..4 {
                     self.iter.next()?;
                 }
-                true
+                AnyValue::Bool(true)
             }
             'f' => {
                 // Parse false
@@ -34,63 +94,100 @@ impl<'a> Deserializer<'a> for JSONDeserializer<'a> {
                 for _ in 0..5 {
                     self.iter.next()?;
                 }
-                true
+                AnyValue::Bool(false)
             }
-            _ => None?,
+            'n' => {
+                // Parse null
+                // For now just assume all the characters are correct
+                for _ in 0..4 {
+                    self.iter.next()?;
+                }
+                AnyValue::Null
+            }
+            '-' => AnyValue::Number(self.parse_number()?), // Parse negative number
+            c if c.is_ascii_digit() => AnyValue::Number(self.parse_number()?),
+            _ => return None,
         })
     }
 
-    fn i64(&mut self) -> Option<i64> {
-        self.parse_number().map(|f| f as i64)
-    }
-
-    fn f64(&mut self) -> Option<f64> {
-        self.parse_number()
-    }
-
-    fn any(&mut self) -> Option<AnyValue<'a, Self::ObjectDeserializer>> {
-        todo!()
-    }
-
-    fn begin_object(&mut self) -> Option<Self::ObjectDeserializer> {
-        match self.iter.next()?.1 {
-            '{' => Some(JSONObjectDeserializer {
-                deserializer: self.clone(),
-            }),
-            _ => None,
+    fn begin_object(&mut self) -> bool {
+        if self.recursive_depth >= RECURSIVE_LIMIT {
+            return false;
+        }
+        match self.iter.next() {
+            Some((_, '{')) => {
+                self.recursive_depth += 1;
+                true
+            }
+            _ => false,
         }
     }
-}
 
-pub struct JSONObjectDeserializer<'a> {
-    deserializer: JSONDeserializer<'a>,
-}
-
-impl<'a> ObjectDeserializer<'a> for JSONObjectDeserializer<'a> {
-    type Deserializer = JSONDeserializer<'a>;
-    fn property(&mut self) -> Option<(Cow<'a, str>, Self::Deserializer)> {
+    fn has_property(&mut self) -> Option<Cow<'a, str>> {
         // '{' already parsed
-        self.deserializer.skip_whitespace();
-        match self.deserializer.iter.peek()? {
+        self.skip_whitespace();
+        match self.iter.peek()? {
             (_, ',') => {
-                self.deserializer.iter.next();
+                self.iter.next();
             }
             (_, '}') => {
-                self.deserializer.iter.next();
+                if self.recursive_depth == 0 {
+                    return None;
+                } else {
+                    self.recursive_depth -= 1
+                };
+                self.iter.next();
                 None?
             }
             _ => {}
         }
 
-        self.deserializer.skip_whitespace();
-        let name = self.deserializer.parse_string()?;
-        Some((name, self.deserializer.clone()))
+        self.skip_whitespace();
+        let name = self.parse_string()?;
+
+        self.skip_whitespace();
+        match self.iter.next() {
+            Some((_, ':')) => {}
+            _ => return None,
+        };
+        self.skip_whitespace();
+
+        Some(name)
     }
 
-    fn end_object(mut self) -> Option<()> {
-        match self.deserializer.iter.next()?.1 {
-            '}' => Some(()),
-            _ => None,
+    fn begin_array(&mut self) -> bool {
+        if self.recursive_depth >= RECURSIVE_LIMIT {
+            return false;
+        }
+
+        self.skip_whitespace();
+        match self.iter.next() {
+            Some((_, '[')) => {
+                self.recursive_depth += 1;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn has_array_value(&mut self) -> bool {
+        // '[' already parsed
+        self.skip_whitespace();
+        match self.iter.peek() {
+            Some((_, ',')) => {
+                self.iter.next();
+                true
+            }
+            Some((_, ']')) => {
+                if self.recursive_depth == 0 {
+                    return false;
+                } else {
+                    self.recursive_depth -= 1
+                };
+                self.iter.next();
+                false
+            }
+            _ => true,
         }
     }
 }
@@ -172,7 +269,6 @@ impl<'a> JSONDeserializer<'a> {
                 }
             }
         }
-
         Some(string)
     }
 

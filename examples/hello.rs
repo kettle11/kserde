@@ -1,7 +1,7 @@
 use kjson::*;
 fn main() {
     let source = std::fs::read_to_string("examples/hello.json").unwrap();
-    let json = from_str(&source);
+    let json = Thing::from_json(&source).unwrap();
     println!("JSON: {:#?}", json);
 
     let mut serializer = JSONSerializer::new();

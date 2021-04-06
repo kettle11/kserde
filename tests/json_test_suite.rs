@@ -2,6 +2,8 @@
 //! https://github.com/nst/JSONTestSuite
 //! and is available under the MIT license.
 
+use kjson::*;
+
 #[test]
 fn json_test_suite() {
     let files = std::fs::read_dir("tests/test_parsing").unwrap();
@@ -15,8 +17,9 @@ fn json_test_suite() {
 
         let source = std::fs::read_to_string(path);
         if let Ok(source) = source {
-            let json = kjson::from_str(&source);
+            let json = Thing::from_json(&source);
 
+            println!("TEST: {:?}", path);
             if file_name.starts_with("y_") {
                 assert!(json.is_some(), "Unexpected failure for: {}", path);
             }

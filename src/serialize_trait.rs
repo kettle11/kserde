@@ -32,45 +32,45 @@ pub trait ArraySerializer {
 }
 
 pub trait Serialize {
-    fn serialize<E: Serializer>(&self, serializer: &mut E);
+    fn serialize<S: Serializer>(&self, serializer: &mut S);
 }
 
 impl Serialize for &str {
-    fn serialize<E: Serializer>(&self, serializer: &mut E) {
+    fn serialize<S: Serializer>(&self, serializer: &mut S) {
         serializer.string(self)
     }
 }
 
 impl Serialize for String {
-    fn serialize<E: Serializer>(&self, serializer: &mut E) {
+    fn serialize<S: Serializer>(&self, serializer: &mut S) {
         serializer.string(self)
     }
 }
 
 impl Serialize for i64 {
     #[inline]
-    fn serialize<E: Serializer>(&self, serializer: &mut E) {
+    fn serialize<S: Serializer>(&self, serializer: &mut S) {
         serializer.i64(*self)
     }
 }
 
 impl Serialize for f64 {
     #[inline]
-    fn serialize<E: Serializer>(&self, serializer: &mut E) {
+    fn serialize<S: Serializer>(&self, serializer: &mut S) {
         serializer.f64(*self)
     }
 }
 
 impl Serialize for bool {
     #[inline]
-    fn serialize<E: Serializer>(&self, serializer: &mut E) {
+    fn serialize<S: Serializer>(&self, serializer: &mut S) {
         serializer.bool(*self)
     }
 }
 
-impl<S: Serialize> Serialize for [S] {
+impl<SERIALIZE: Serialize> Serialize for [SERIALIZE] {
     #[inline]
-    fn serialize<E: Serializer>(&self, serializer: &mut E) {
+    fn serialize<S: Serializer>(&self, serializer: &mut S) {
         let mut array_serializer = serializer.begin_array();
         for value in self.into_iter() {
             array_serializer.value(value);
@@ -79,8 +79,8 @@ impl<S: Serialize> Serialize for [S] {
     }
 }
 
-impl<S: std::ops::Deref<Target = str>, V: Serialize> Serialize for HashMap<S, V> {
-    fn serialize<E: Serializer>(&self, serializer: &mut E) {
+impl<STRING: std::ops::Deref<Target = str>, V: Serialize> Serialize for HashMap<STRING, V> {
+    fn serialize<S: Serializer>(&self, serializer: &mut S) {
         let mut object_serializer = serializer.begin_object();
         for (key, value) in self.into_iter() {
             object_serializer.property(key, value);
@@ -90,9 +90,9 @@ impl<S: std::ops::Deref<Target = str>, V: Serialize> Serialize for HashMap<S, V>
 }
 
 // Maybe this should be part of the serializer itself.
-impl<S: Serialize> Serialize for Option<S> {
+impl<SERIALIZE: Serialize> Serialize for Option<SERIALIZE> {
     #[inline]
-    fn serialize<E: Serializer>(&self, serializer: &mut E) {
+    fn serialize<S: Serializer>(&self, serializer: &mut S) {
         if let Some(s) = self {
             s.serialize(serializer);
         } else {

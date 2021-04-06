@@ -1,50 +1,42 @@
 use std::borrow::Cow;
 
-/// If a value returns `None` the deserializer will still be incremented
-/// and the deserializer will no longer be in a valid state.
+/// If a value returns `None` then it should be assumed that the deserializer is
+/// no longer in a valid state.
 pub trait Deserializer<'a> {
-    type ObjectDeserializer: ObjectDeserializer<'a>;
-
     fn string(&mut self) -> Option<Cow<'a, str>>;
     fn bool(&mut self) -> Option<bool>;
     fn i64(&mut self) -> Option<i64>;
     fn f64(&mut self) -> Option<f64>;
-    fn any(&mut self) -> Option<AnyValue<'a, Self::ObjectDeserializer>>;
+    fn any<'b>(&'b mut self) -> Option<AnyValue<'a>>;
 
-    fn begin_object(&mut self) -> Option<Self::ObjectDeserializer>;
+    // I'd prefer the rest of this to be a different trait that
+    // borrows from the deserializer, but I couldn't figure out
+    // how to make that work without generic associated types,
+    // so these functions are here instead.
+    fn begin_object(&mut self) -> bool;
+    /// When this returns `None` we're at the end of the object or an error was encountered.
+    /// The name of the property is returned.
+    fn has_property(&mut self) -> Option<Cow<'a, str>>;
+
+    fn begin_array(&mut self) -> bool;
+    /// When this returns `None` we're at the end of the array or an error was encountered.
+    fn has_array_value(&mut self) -> bool;
 }
 
-//pub trait Deserializer<'a: 'b, 'b>: DeserializeValue<'a> + AsObjectDeserializer<'a, 'b> {}
-
-pub trait Deserialize: Sized {
-    fn deserialize<'a, D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self>;
+pub trait Deserialize<'a>: Sized {
+    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self>;
 }
 
-pub trait ObjectDeserializer<'a> {
-    type Deserializer: Deserializer<'a>;
-    /// Returns the property name and a deserializer that can be used to deserialize the value.
-    fn property(&mut self) -> Option<(Cow<'a, str>, Self::Deserializer)>;
-    fn end_object(self) -> Option<()>;
-}
-
-/*
-pub trait ArrayDeserializer<'a> {
-    type Deserializer: for<'b> Deserializer<'b>;
-    /// Returns the property name and a deserializer that can be used to deserialize the
-    /// value.
-    fn property(&mut self) -> (Cow<'a, str>, Self::Deserializer);
-}
-*/
-
-pub enum AnyValue<'a, O: ObjectDeserializer<'a>> {
+pub enum AnyValue<'a> {
     String(std::borrow::Cow<'a, str>),
     Bool(bool),
     Number(f64),
-    Object(O),
+    Object,
+    Array,
     Null,
 }
 
-impl<'a, O: ObjectDeserializer<'a>> AnyValue<'a, O> {
+impl<'a> AnyValue<'a> {
     pub fn string(self) -> Option<Cow<'a, str>> {
         match self {
             Self::String(a) => Some(a),
@@ -55,20 +47,6 @@ impl<'a, O: ObjectDeserializer<'a>> AnyValue<'a, O> {
     pub fn number(self) -> Option<f64> {
         match self {
             Self::Number(v) => Some(v),
-            _ => None,
-        }
-    }
-
-    pub fn object(self) -> Option<O> {
-        match self {
-            Self::Object(v) => Some(v),
-            _ => None,
-        }
-    }
-
-    pub fn boolean(self) -> Option<bool> {
-        match self {
-            Self::Bool(b) => Some(b),
             _ => None,
         }
     }

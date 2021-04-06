@@ -1,6 +1,8 @@
+mod thing;
 mod deserialize_trait;
 mod serialize_trait;
 
+pub use thing::*;
 pub use deserialize_trait::*;
 pub use serialize_trait::*;
 
