@@ -73,13 +73,13 @@ impl<'a> AsObjectSerializer<'a> for JSONSerializer {
 impl<'a> ObjectSerializer for JSONObjectSerializer<'a> {
     fn property<V: Serialize>(&mut self, name: &str, value: &V) {
         let serializer = &mut self.serializer;
+        serializer.s.push('\n');
         serializer.indent();
         name.serialize(*serializer);
         serializer.s.push_str(": ");
         value.serialize(*serializer);
         serializer.s.push_str(", ");
         self.need_to_pop_comma = true;
-        value.serialize(self.serializer)
     }
 
     fn end_object(self) {

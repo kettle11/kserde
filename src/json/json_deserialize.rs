@@ -1,18 +1,101 @@
-use crate::Value;
+use crate::{AnyValue, Deserializer, ObjectDeserializer};
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::iter::Peekable;
 use std::str::CharIndices;
 
-const RECURSIVE_LIMIT: usize = 1024;
+// const RECURSIVE_LIMIT: usize = 1024;
 
-struct Parser<'a> {
-    recursion_depth: usize,
+#[derive(Clone)]
+pub struct JSONDeserializer<'a> {
     source: &'a str,
     iter: Peekable<CharIndices<'a>>,
 }
 
-impl<'a> Parser<'a> {
+impl<'a> Deserializer<'a> for JSONDeserializer<'a> {
+    type ObjectDeserializer = JSONObjectDeserializer<'a>;
+
+    fn string(&mut self) -> Option<Cow<'a, str>> {
+        self.parse_string()
+    }
+
+    fn bool(&mut self) -> Option<bool> {
+        Some(match self.iter.next()?.1 {
+            't' => {
+                // Parse true
+                // For now just assume all the characters are correct
+                for _ in 0..4 {
+                    self.iter.next()?;
+                }
+                true
+            }
+            'f' => {
+                // Parse false
+                // For now just assume all the characters are correct
+                for _ in 0..5 {
+                    self.iter.next()?;
+                }
+                true
+            }
+            _ => None?,
+        })
+    }
+
+    fn i64(&mut self) -> Option<i64> {
+        self.parse_number().map(|f| f as i64)
+    }
+
+    fn f64(&mut self) -> Option<f64> {
+        self.parse_number()
+    }
+
+    fn any(&mut self) -> Option<AnyValue<'a, Self::ObjectDeserializer>> {
+        todo!()
+    }
+
+    fn begin_object(&mut self) -> Option<Self::ObjectDeserializer> {
+        match self.iter.next()?.1 {
+            '{' => Some(JSONObjectDeserializer {
+                deserializer: self.clone(),
+            }),
+            _ => None,
+        }
+    }
+}
+
+pub struct JSONObjectDeserializer<'a> {
+    deserializer: JSONDeserializer<'a>,
+}
+
+impl<'a> ObjectDeserializer<'a> for JSONObjectDeserializer<'a> {
+    type Deserializer = JSONDeserializer<'a>;
+    fn property(&mut self) -> Option<(Cow<'a, str>, Self::Deserializer)> {
+        // '{' already parsed
+        self.deserializer.skip_whitespace();
+        match self.deserializer.iter.peek()? {
+            (_, ',') => {
+                self.deserializer.iter.next();
+            }
+            (_, '}') => {
+                self.deserializer.iter.next();
+                None?
+            }
+            _ => {}
+        }
+
+        self.deserializer.skip_whitespace();
+        let name = self.deserializer.parse_string()?;
+        Some((name, self.deserializer.clone()))
+    }
+
+    fn end_object(mut self) -> Option<()> {
+        match self.deserializer.iter.next()?.1 {
+            '}' => Some(()),
+            _ => None,
+        }
+    }
+}
+
+impl<'a> JSONDeserializer<'a> {
     pub fn skip_whitespace(&mut self) {
         while self.iter.peek().map_or(false, |(_, c)| c.is_whitespace()) {
             self.iter.next();
@@ -29,9 +112,9 @@ impl<'a> Parser<'a> {
         let mut owned = false;
 
         loop {
-            match self.iter.next() {
-                Some((_, '"')) => break,
-                Some((_, '\\')) => {
+            match self.iter.next()? {
+                (_, '"') => break,
+                (_, '\\') => {
                     owned = true;
                     let next = self.iter.next()?;
                     match next.1 {
@@ -80,8 +163,7 @@ impl<'a> Parser<'a> {
                         _ => return None,
                     }
                 }
-                None => return None,
-                Some((i, c)) => {
+                (i, c) => {
                     if owned {
                         string.to_mut().push(c)
                     } else {
@@ -92,64 +174,6 @@ impl<'a> Parser<'a> {
         }
 
         Some(string)
-    }
-
-    pub fn parse_object(&mut self) -> Option<HashMap<Cow<'a, str>, Value<'a>>> {
-        // '{' already parsed
-        let mut string_to_value = HashMap::new();
-        loop {
-            self.skip_whitespace();
-            match self.iter.peek() {
-                Some((_, ',')) => {
-                    self.iter.next();
-                }
-                Some((_, '}')) => {
-                    self.iter.next();
-                    break;
-                }
-                None => return None,
-                _ => {}
-            }
-
-            self.skip_whitespace();
-            let string = self.parse_string()?;
-
-            self.skip_whitespace();
-            match self.iter.next() {
-                Some((_, ':')) => {}
-                _ => return None,
-            };
-
-            self.skip_whitespace();
-
-            let value = self.parse_value()?;
-            string_to_value.insert(string, value);
-        }
-        Some(string_to_value)
-    }
-
-    pub fn parse_array(&mut self) -> Option<Vec<Value<'a>>> {
-        let mut values = Vec::new();
-        loop {
-            self.skip_whitespace();
-            match self.iter.peek() {
-                Some((_, ',')) => {
-                    self.iter.next();
-                }
-                Some((_, ']')) => {
-                    self.iter.next();
-                    break;
-                }
-                None => {
-                    return None;
-                }
-                _ => {}
-            }
-            self.skip_whitespace();
-
-            values.push(self.parse_value()?);
-        }
-        Some(values)
     }
 
     pub fn parse_number(&mut self) -> Option<f64> {
@@ -248,66 +272,15 @@ impl<'a> Parser<'a> {
         }
         Some(number)
     }
-
-    pub fn parse_value(&mut self) -> Option<Value<'a>> {
-        self.recursion_depth += 1;
-        if self.recursion_depth > RECURSIVE_LIMIT {
-            return None;
-        }
-        self.skip_whitespace();
-
-        Some(match self.iter.peek()?.1 {
-            '{' => {
-                self.iter.next();
-                Value::Object(self.parse_object()?)
-            }
-            '[' => {
-                self.iter.next();
-                Value::Array(self.parse_array()?)
-            }
-            '"' => {
-                Value::String(self.parse_string()?)
-                // Parse String
-            }
-            't' => {
-                // Parse true
-                // For now just assume all the characters are correct
-                for _ in 0..4 {
-                    self.iter.next()?;
-                }
-                Value::Boolean(true)
-            }
-            'f' => {
-                // Parse false
-                // For now just assume all the characters are correct
-                for _ in 0..5 {
-                    self.iter.next()?;
-                }
-                Value::Boolean(true)
-            }
-            'n' => {
-                // Parse null
-                // For now just assume all the characters are correct
-                for _ in 0..4 {
-                    self.iter.next()?;
-                }
-                Value::Boolean(true)
-            }
-            '-' => {
-                // Parse negative number
-                Value::Number(self.parse_number()?)
-            }
-            c if c.is_ascii_digit() => Value::Number(self.parse_number()?),
-            _ => return None,
-        })
-    }
 }
 
+/*
 pub fn from_str<'a>(source: &'a str) -> Option<Value<'a>> {
-    let mut parser = Parser {
+    let mut parser = JSONDeserializer {
         recursion_depth: 0,
         source,
         iter: source.char_indices().peekable(),
     };
     parser.parse_value()
 }
+*/

@@ -41,6 +41,12 @@ impl Serialize for &str {
     }
 }
 
+impl Serialize for String {
+    fn serialize<E: Serializer>(&self, serializer: &mut E) {
+        serializer.string(self)
+    }
+}
+
 impl Serialize for i64 {
     #[inline]
     fn serialize<E: Serializer>(&self, serializer: &mut E) {
