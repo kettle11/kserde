@@ -16,26 +16,19 @@ impl Serialize for Person {
 
 impl<'a> Deserialize<'a> for Person {
     fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
-        if !deserializer.begin_object() {
-            return None;
-        }
+        deserializer.begin_object().then(|| {})?;
 
         let mut name: Option<String> = None;
         let mut age = None;
 
-        for _ in 0..2 {
-            {
-                let property_name = deserializer.has_property()?;
-                let property_name: &str = &property_name;
-                match property_name {
-                    "name" => {
-                        name = Some(deserializer.string()?.to_string());
-                    }
-                    "age" => {
-                        age = Some(deserializer.i64()?);
-                    }
-                    _ => {}
+        while let Some(p) = deserializer.has_property() {
+            match &*p {
+                "name" => name = Some(deserializer.string()?.to_string()),
+
+                "age" => {
+                    age = Some(deserializer.i64()?);
                 }
+                _ => {}
             }
         }
 

@@ -27,6 +27,109 @@ pub trait Deserialize<'a>: Sized {
     fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self>;
 }
 
+impl<'a> Deserialize<'a> for String {
+    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+        deserializer.string().map(|s| s.to_string())
+    }
+}
+
+impl<'a> Deserialize<'a> for Cow<'a, str> {
+    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+        deserializer.string()
+    }
+}
+
+impl<'a> Deserialize<'a> for i32 {
+    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+        deserializer.i64().map(|v| v as i32)
+    }
+}
+
+impl<'a> Deserialize<'a> for i64 {
+    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+        deserializer.i64()
+    }
+}
+
+impl<'a> Deserialize<'a> for f32 {
+    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+        deserializer.f64().map(|f| f as f32)
+    }
+}
+
+impl<'a> Deserialize<'a> for f64 {
+    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+        deserializer.f64()
+    }
+}
+
+impl<'a> Deserialize<'a> for bool {
+    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+        deserializer.bool()
+    }
+}
+
+impl<'a, T: Deserialize<'a>> Deserialize<'a> for Vec<T> {
+    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+        let mut vec = Vec::new();
+        deserializer.begin_array().then(|| {})?;
+        while deserializer.has_array_value() {
+            vec.push(T::deserialize(deserializer)?)
+        }
+        Some(vec)
+    }
+}
+
+impl<'a, T: Deserialize<'a>> Deserialize<'a> for std::collections::HashMap<String, T> {
+    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+        let mut hash_map = std::collections::HashMap::new();
+        deserializer.begin_object().then(|| {})?;
+        while let Some(key) = deserializer.has_property() {
+            let t = T::deserialize(deserializer)?;
+            hash_map.insert(key.to_string(), t);
+        }
+        Some(hash_map)
+    }
+}
+
+impl<'a, T: Deserialize<'a>, const COUNT: usize> Deserialize<'a> for [T; COUNT] {
+    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+        deserializer.begin_array().then(|| {})?;
+
+        // This implementation is pretty funky.
+        // It feels like this behavior should be handled by something from the standard library.
+        let mut a = std::mem::MaybeUninit::<[T; COUNT]>::uninit();
+        unsafe {
+            for i in 0..COUNT {
+                if deserializer.has_array_value() {
+                    let t = T::deserialize(deserializer);
+
+                    if let Some(t) = t {
+                        a.as_mut_ptr().cast::<T>().add(i).write(t);
+                        continue;
+                    }
+                }
+
+                // If this deserialization fails early then
+                // we need to drop all the previous elements before returning.
+                for j in 0..i {
+                    std::ptr::drop_in_place(a.as_mut_ptr().cast::<T>().add(j))
+                }
+                return None;
+            }
+            Some(a.assume_init())
+        }
+    }
+}
+
+impl<'a> Deserialize<'a> for () {
+    fn deserialize<D: Deserializer<'a>>(_deserializer: &mut D) -> Option<Self> {
+        Some(())
+    }
+}
+
+// Probably should have some sort of slice deserialization here,
+
 pub enum AnyValue<'a> {
     String(std::borrow::Cow<'a, str>),
     Bool(bool),

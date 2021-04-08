@@ -1,4 +1,4 @@
-use crate::{AnyValue, Deserializer};
+use crate::{AnyValue, Deserialize, Deserializer};
 use std::borrow::Cow;
 use std::iter::Peekable;
 use std::str::CharIndices;
@@ -58,9 +58,7 @@ impl<'a> Deserializer<'a> for JSONDeserializer<'a> {
     }
 
     fn any<'b>(&'b mut self) -> Option<AnyValue<'a>> {
-        println!("PEEK: {:?}", self.iter.peek());
         self.skip_whitespace();
-        println!("PEEK: {:?}", self.iter.peek());
 
         Some(match self.iter.peek()?.1 {
             '{' => {
@@ -114,6 +112,8 @@ impl<'a> Deserializer<'a> for JSONDeserializer<'a> {
         if self.recursive_depth >= RECURSIVE_LIMIT {
             return false;
         }
+        self.skip_whitespace();
+
         match self.iter.next() {
             Some((_, '{')) => {
                 self.recursive_depth += 1;
@@ -370,13 +370,12 @@ impl<'a> JSONDeserializer<'a> {
     }
 }
 
-/*
-pub fn from_str<'a>(source: &'a str) -> Option<Value<'a>> {
-    let mut parser = JSONDeserializer {
-        recursion_depth: 0,
-        source,
-        iter: source.char_indices().peekable(),
-    };
-    parser.parse_value()
+pub trait FromJson<'a>: Sized {
+    fn from_json(s: &'a str) -> Option<Self>;
 }
-*/
+impl<'a, T: Deserialize<'a>> FromJson<'a> for T {
+    fn from_json(s: &'a str) -> Option<Self> {
+        let mut deserializer = JSONDeserializer::new(s);
+        Self::deserialize(&mut deserializer)
+    }
+}

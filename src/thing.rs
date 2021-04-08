@@ -5,14 +5,57 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 #[derive(Debug)]
+pub struct ObjectProperty<'a> {
+    pub item: Thing<'a>,
+    pub index: usize,
+}
+
+#[derive(Debug)]
 /// A flexible data structure that everything can deserialize to.
 pub enum Thing<'a> {
     String(Cow<'a, str>),
     Bool(bool),
     Number(f64),
-    Object(HashMap<Cow<'a, str>, Thing<'a>>),
+    Object(HashMap<Cow<'a, str>, ObjectProperty<'a>>),
     Array(Vec<Thing<'a>>),
     Null,
+}
+
+impl<'a> Thing<'a> {
+    pub fn string(&self) -> Option<&Cow<'a, str>> {
+        match self {
+            Thing::String(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn bool(&self) -> Option<bool> {
+        match self {
+            Thing::Bool(v) => Some(*v),
+            _ => None,
+        }
+    }
+
+    pub fn number(&self) -> Option<f64> {
+        match self {
+            Thing::Number(v) => Some(*v),
+            _ => None,
+        }
+    }
+
+    pub fn object(&self) -> Option<&HashMap<Cow<'a, str>, ObjectProperty<'a>>> {
+        match self {
+            Thing::Object(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn array(&self) -> Option<&Vec<Thing<'a>>> {
+        match self {
+            Thing::Array(v) => Some(v),
+            _ => None,
+        }
+    }
 }
 
 impl<'a> Deserialize<'a> for Thing<'a> {
@@ -21,7 +64,13 @@ impl<'a> Deserialize<'a> for Thing<'a> {
             AnyValue::Object => {
                 let mut items = HashMap::new();
                 while let Some(name) = deserializer.has_property() {
-                    items.insert(name, Thing::deserialize(deserializer)?);
+                    items.insert(
+                        name,
+                        ObjectProperty {
+                            index: items.len(),
+                            item: Thing::deserialize(deserializer)?,
+                        },
+                    );
                 }
                 Thing::Object(items)
             }
@@ -45,8 +94,13 @@ impl<'a> Serialize for Thing<'a> {
         match self {
             Self::Object(o) => {
                 let mut object = serializer.begin_object();
+                // This allocation and sorting probably isn't ideal,
+                // The alternative is to use a sorted HashMap when deserializing
+                // into Thing.
+                let mut properties: Vec<_> = o.iter().collect();
+                properties.sort_by_key(|(_, i)| i.index);
                 for (key, value) in o.iter() {
-                    object.property(key, value);
+                    object.property(key, &value.item);
                 }
                 object.end_object();
             }
