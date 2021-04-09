@@ -2,7 +2,7 @@
 //! https://github.com/nst/JSONTestSuite
 //! and is available under the MIT license.
 
-use kjson::*;
+use kserde::*;
 
 #[test]
 fn json_test_suite() {
@@ -25,7 +25,7 @@ fn json_test_suite() {
             }
 
             if file_name.starts_with("n_") && json.is_some() {
-                // kjson is more permissive.
+                // This crate is more permissive.
                 // For json that should fail but does not is ignored.
                 // assert!(json.is_none(), "Unexpected success for: {}", path);
             }

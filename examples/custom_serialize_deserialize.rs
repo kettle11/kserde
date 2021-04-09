@@ -1,4 +1,4 @@
-use kjson::*;
+use kserde::*;
 
 struct Person {
     name: String,

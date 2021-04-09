@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-pub trait Serializer: for<'a> AsObjectSerializer<'a> + for<'a> AsArraySerializer<'a> {
+pub trait Serializer:
+    for<'a> AsObjectSerializer<'a> + for<'a> AsArraySerializer<'a> + Sized
+{
     type Result;
     fn new() -> Self;
     fn string(&mut self, s: &str);
@@ -8,6 +10,11 @@ pub trait Serializer: for<'a> AsObjectSerializer<'a> + for<'a> AsArraySerializer
     fn i64(&mut self, i: i64);
     fn f64(&mut self, n: f64);
     fn null(&mut self);
+
+    /// Serialize a value that implements Serialize.
+    fn serialize<V: Serialize>(&mut self, value: &V) {
+        V::serialize(value, self);
+    }
     fn done(self) -> Self::Result;
 }
 
@@ -47,10 +54,31 @@ impl Serialize for String {
     }
 }
 
+impl Serialize for i32 {
+    #[inline]
+    fn serialize<S: Serializer>(&self, serializer: &mut S) {
+        serializer.i64(*self as i64)
+    }
+}
+
 impl Serialize for i64 {
     #[inline]
     fn serialize<S: Serializer>(&self, serializer: &mut S) {
         serializer.i64(*self)
+    }
+}
+
+impl Serialize for usize {
+    #[inline]
+    fn serialize<S: Serializer>(&self, serializer: &mut S) {
+        serializer.i64(*self as i64)
+    }
+}
+
+impl Serialize for f32 {
+    #[inline]
+    fn serialize<S: Serializer>(&self, serializer: &mut S) {
+        serializer.f64(*self as f64)
     }
 }
 
@@ -72,7 +100,29 @@ impl<SERIALIZE: Serialize> Serialize for [SERIALIZE] {
     #[inline]
     fn serialize<S: Serializer>(&self, serializer: &mut S) {
         let mut array_serializer = serializer.begin_array();
-        for value in self.into_iter() {
+        for value in self {
+            array_serializer.value(value);
+        }
+        array_serializer.end_array();
+    }
+}
+
+impl<SERIALIZE: Serialize, const SIZE: usize> Serialize for [SERIALIZE; SIZE] {
+    #[inline]
+    fn serialize<S: Serializer>(&self, serializer: &mut S) {
+        let mut array_serializer = serializer.begin_array();
+        for value in self {
+            array_serializer.value(value);
+        }
+        array_serializer.end_array();
+    }
+}
+
+impl<SERIALIZE: Serialize> Serialize for Vec<SERIALIZE> {
+    #[inline]
+    fn serialize<S: Serializer>(&self, serializer: &mut S) {
+        let mut array_serializer = serializer.begin_array();
+        for value in self {
             array_serializer.value(value);
         }
         array_serializer.end_array();
@@ -89,7 +139,6 @@ impl<STRING: std::ops::Deref<Target = str>, V: Serialize> Serialize for HashMap<
     }
 }
 
-// Maybe this should be part of the serializer itself.
 impl<SERIALIZE: Serialize> Serialize for Option<SERIALIZE> {
     #[inline]
     fn serialize<S: Serializer>(&self, serializer: &mut S) {

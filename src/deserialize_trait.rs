@@ -51,6 +51,12 @@ impl<'a> Deserialize<'a> for i64 {
     }
 }
 
+impl<'a> Deserialize<'a> for usize {
+    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+        deserializer.i64().map(|i| i as usize)
+    }
+}
+
 impl<'a> Deserialize<'a> for f32 {
     fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
         deserializer.f64().map(|f| f as f32)

@@ -134,3 +134,14 @@ pub fn to_json_string<V: Serialize>(value: &V) -> String {
     value.serialize(&mut serializer);
     serializer.done()
 }
+
+pub trait ToJson: Sized {
+    fn to_json(&self) -> String;
+}
+impl<T: Serialize> ToJson for T {
+    fn to_json(&self) -> String {
+        let mut serializer = JSONSerializer::new();
+        self.serialize(&mut serializer);
+        serializer.done()
+    }
+}

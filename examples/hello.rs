@@ -1,4 +1,4 @@
-use kjson::*;
+use kserde::*;
 fn main() {
     let source = std::fs::read_to_string("examples/hello.json").unwrap();
     let json = Thing::from_json(&source).unwrap();
