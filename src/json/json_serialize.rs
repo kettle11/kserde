@@ -129,12 +129,6 @@ impl<'a> ArraySerializer for JSONArraySerializer<'a> {
     }
 }
 
-pub fn to_json_string<V: Serialize>(value: &V) -> String {
-    let mut serializer = JSONSerializer::new();
-    value.serialize(&mut serializer);
-    serializer.done()
-}
-
 pub trait ToJson: Sized {
     fn to_json(&self) -> String;
 }

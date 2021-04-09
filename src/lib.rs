@@ -1,10 +1,13 @@
-mod thing;
+//! A minimalist serialization / deserialization crate.
+//! **WORK IN PROGRESS**
+
 mod deserialize_trait;
 mod serialize_trait;
+mod thing;
 
-pub use thing::*;
 pub use deserialize_trait::*;
 pub use serialize_trait::*;
+pub use thing::*;
 
 mod json {
     mod json_deserialize;
