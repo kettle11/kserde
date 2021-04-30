@@ -123,7 +123,14 @@ impl<'a, T: Deserialize<'a>, const COUNT: usize> Deserialize<'a> for [T; COUNT] 
                 }
                 return None;
             }
-            Some(a.assume_init())
+            let a = a.assume_init();
+
+            // This is needed to consume the end of the array.
+            if !deserializer.has_array_value() {
+                Some(a)
+            } else {
+                None
+            }
         }
     }
 }
