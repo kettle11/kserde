@@ -338,9 +338,18 @@ impl<'a> JSONDeserializer<'a> {
                     _ => 1.,
                 };
 
+                // Skip leading zeroes
+                loop {
+                    match self.iter.peek() {
+                        Some((_, '0')) => {
+                            self.iter.next();
+                        }
+                        _ => break,
+                    }
+                }
+
                 let mut exponent = 0.0;
                 match self.iter.peek()?.1 {
-                    // Are leading 0s for the exponents really something that happens?
                     '0' => {
                         self.iter.next();
                     }
@@ -366,6 +375,7 @@ impl<'a> JSONDeserializer<'a> {
         if is_negative {
             number *= -1.0;
         }
+
         Some(number)
     }
 }
