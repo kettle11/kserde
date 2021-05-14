@@ -367,7 +367,7 @@ impl<'a> JSONDeserializer<'a> {
                     _ => return None,
                 }
 
-                number = number.powf(exponent * sign);
+                number = number * (10.0f64).powf(exponent * sign);
             }
             _ => {}
         }
