@@ -2,3 +2,4 @@
 /benches
 Cargo.lock
 .DS_Store
+kserde_derive_impl/target

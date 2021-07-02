@@ -23,11 +23,8 @@ impl<'a> Deserialize<'a> for Person {
 
         while let Some(p) = deserializer.has_property() {
             match &*p {
-                "name" => name = Some(deserializer.string()?.to_string()),
-
-                "age" => {
-                    age = Some(deserializer.i64()?);
-                }
+                "name" => name = Some(String::deserialize(deserializer)?),
+                "age" => age = Some(i64::deserialize(deserializer)?),
                 _ => {}
             }
         }
