@@ -3,6 +3,7 @@ use std::borrow::Cow;
 /// If a value returns `None` then it should be assumed that the deserializer is
 /// no longer in a valid state.
 pub trait Deserializer<'a> {
+    type Context;
     fn string(&mut self) -> Option<Cow<'a, str>>;
     fn bool(&mut self) -> Option<bool>;
     fn i64(&mut self) -> Option<i64>;
@@ -21,62 +22,63 @@ pub trait Deserializer<'a> {
     fn begin_array(&mut self) -> bool;
     /// When this returns `None` we're at the end of the array or an error was encountered.
     fn has_array_value(&mut self) -> bool;
+    fn get_context_mut(&mut self) -> &mut Self::Context;
 }
 
-pub trait Deserialize<'a>: Sized {
-    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self>;
+pub trait Deserialize<'a, D: Deserializer<'a>>: Sized {
+    fn deserialize(deserializer: &mut D) -> Option<Self>;
 }
 
-impl<'a> Deserialize<'a> for String {
-    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+impl<'a, D: Deserializer<'a>> Deserialize<'a, D> for String {
+    fn deserialize(deserializer: &mut D) -> Option<Self> {
         deserializer.string().map(|s| s.to_string())
     }
 }
 
-impl<'a> Deserialize<'a> for Cow<'a, str> {
-    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+impl<'a, D: Deserializer<'a>> Deserialize<'a, D> for Cow<'a, str> {
+    fn deserialize(deserializer: &mut D) -> Option<Self> {
         deserializer.string()
     }
 }
 
-impl<'a> Deserialize<'a> for i32 {
-    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+impl<'a, D: Deserializer<'a>> Deserialize<'a, D> for i32 {
+    fn deserialize(deserializer: &mut D) -> Option<Self> {
         deserializer.i64().map(|v| v as i32)
     }
 }
 
-impl<'a> Deserialize<'a> for i64 {
-    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+impl<'a, D: Deserializer<'a>> Deserialize<'a, D> for i64 {
+    fn deserialize(deserializer: &mut D) -> Option<Self> {
         deserializer.i64()
     }
 }
 
-impl<'a> Deserialize<'a> for usize {
-    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+impl<'a, D: Deserializer<'a>> Deserialize<'a, D> for usize {
+    fn deserialize(deserializer: &mut D) -> Option<Self> {
         deserializer.i64().map(|i| i as usize)
     }
 }
 
-impl<'a> Deserialize<'a> for f32 {
-    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+impl<'a, D: Deserializer<'a>> Deserialize<'a, D> for f32 {
+    fn deserialize(deserializer: &mut D) -> Option<Self> {
         deserializer.f64().map(|f| f as f32)
     }
 }
 
-impl<'a> Deserialize<'a> for f64 {
-    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+impl<'a, D: Deserializer<'a>> Deserialize<'a, D> for f64 {
+    fn deserialize(deserializer: &mut D) -> Option<Self> {
         deserializer.f64()
     }
 }
 
-impl<'a> Deserialize<'a> for bool {
-    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+impl<'a, D: Deserializer<'a>> Deserialize<'a, D> for bool {
+    fn deserialize(deserializer: &mut D) -> Option<Self> {
         deserializer.bool()
     }
 }
 
-impl<'a, T: Deserialize<'a>> Deserialize<'a> for Vec<T> {
-    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+impl<'a, D: Deserializer<'a>, T: Deserialize<'a, D>> Deserialize<'a, D> for Vec<T> {
+    fn deserialize(deserializer: &mut D) -> Option<Self> {
         let mut vec = Vec::new();
         deserializer.begin_array().then(|| {})?;
         while deserializer.has_array_value() {
@@ -86,8 +88,10 @@ impl<'a, T: Deserialize<'a>> Deserialize<'a> for Vec<T> {
     }
 }
 
-impl<'a, T: Deserialize<'a>> Deserialize<'a> for std::collections::HashMap<String, T> {
-    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+impl<'a, D: Deserializer<'a>, T: Deserialize<'a, D>> Deserialize<'a, D>
+    for std::collections::HashMap<String, T>
+{
+    fn deserialize(deserializer: &mut D) -> Option<Self> {
         let mut hash_map = std::collections::HashMap::new();
         deserializer.begin_object().then(|| {})?;
         while let Some(key) = deserializer.has_property() {
@@ -98,8 +102,10 @@ impl<'a, T: Deserialize<'a>> Deserialize<'a> for std::collections::HashMap<Strin
     }
 }
 
-impl<'a, T: Deserialize<'a>, const COUNT: usize> Deserialize<'a> for [T; COUNT] {
-    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+impl<'a, D: Deserializer<'a>, T: Deserialize<'a, D>, const COUNT: usize> Deserialize<'a, D>
+    for [T; COUNT]
+{
+    fn deserialize(deserializer: &mut D) -> Option<Self> {
         deserializer.begin_array().then(|| {})?;
 
         // This implementation is pretty funky.
@@ -135,8 +141,8 @@ impl<'a, T: Deserialize<'a>, const COUNT: usize> Deserialize<'a> for [T; COUNT] 
     }
 }
 
-impl<'a> Deserialize<'a> for () {
-    fn deserialize<D: Deserializer<'a>>(_deserializer: &mut D) -> Option<Self> {
+impl<'a, D: Deserializer<'a>> Deserialize<'a, D> for () {
+    fn deserialize(_deserializer: &mut D) -> Option<Self> {
         Some(())
     }
 }

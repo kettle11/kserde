@@ -6,23 +6,26 @@ use std::str::CharIndices;
 const RECURSIVE_LIMIT: usize = 1024;
 
 #[derive(Clone)]
-pub struct JSONDeserializer<'a> {
+pub struct JSONDeserializer<'a, CONTEXT> {
     recursive_depth: usize,
     source: &'a str,
     iter: Peekable<CharIndices<'a>>,
+    context: CONTEXT,
 }
 
-impl<'a> JSONDeserializer<'a> {
+impl<'a> JSONDeserializer<'a, ()> {
     pub fn new(source: &'a str) -> Self {
         Self {
             recursive_depth: 0,
             iter: source.char_indices().peekable(),
             source,
+            context: (),
         }
     }
 }
 
-impl<'a> Deserializer<'a> for JSONDeserializer<'a> {
+impl<'a, CONTEXT> Deserializer<'a> for JSONDeserializer<'a, CONTEXT> {
+    type Context = CONTEXT;
     fn string(&mut self) -> Option<Cow<'a, str>> {
         self.skip_whitespace();
         self.parse_string()
@@ -190,9 +193,13 @@ impl<'a> Deserializer<'a> for JSONDeserializer<'a> {
             _ => true,
         }
     }
+
+    fn get_context_mut(&mut self) -> &mut Self::Context {
+        &mut self.context
+    }
 }
 
-impl<'a> JSONDeserializer<'a> {
+impl<'a, CONTEXT> JSONDeserializer<'a, CONTEXT> {
     pub fn skip_whitespace(&mut self) {
         while self.iter.peek().map_or(false, |(_, c)| c.is_whitespace()) {
             self.iter.next();
@@ -383,7 +390,7 @@ impl<'a> JSONDeserializer<'a> {
 pub trait FromJson<'a>: Sized {
     fn from_json(s: &'a str) -> Option<Self>;
 }
-impl<'a, T: Deserialize<'a>> FromJson<'a> for T {
+impl<'a, T: Deserialize<'a, JSONDeserializer<'a, ()>>> FromJson<'a> for T {
     fn from_json(s: &'a str) -> Option<Self> {
         let mut deserializer = JSONDeserializer::new(s);
         Self::deserialize(&mut deserializer)

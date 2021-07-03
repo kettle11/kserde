@@ -1,25 +1,36 @@
 use crate::*;
 use std::iter::Iterator;
 
-pub struct JSONSerializer {
+pub struct JSONSerializer<CONTEXT> {
     s: String,
     indentation: u16,
+    just_began_object_or_array: bool,
+    context: CONTEXT,
 }
 
-impl JSONSerializer {
+impl JSONSerializer<()> {
+    pub fn new() -> Self {
+        Self::new_with_context(())
+    }
+}
+
+impl<CONTEXT> JSONSerializer<CONTEXT> {
+    fn new_with_context(context: CONTEXT) -> Self {
+        JSONSerializer {
+            s: String::new(),
+            indentation: 0,
+            just_began_object_or_array: false,
+            context,
+        }
+    }
+
     fn indent(&mut self) {
         self.s.extend((0..self.indentation).map(|_| ' '))
     }
 }
 
-impl Serializer for JSONSerializer {
-    fn new() -> Self {
-        Self {
-            s: String::new(),
-            indentation: 0,
-        }
-    }
-
+impl<CONTEXT> Serializer for JSONSerializer<CONTEXT> {
+    type Context = CONTEXT;
     type Result = String;
 
     fn f64(&mut self, n: f64) {
@@ -51,88 +62,58 @@ impl Serializer for JSONSerializer {
     fn done(self) -> Self::Result {
         self.s
     }
-}
 
-pub struct JSONObjectSerializer<'a> {
-    need_to_pop_comma: bool,
-    serializer: &'a mut JSONSerializer,
-}
-
-impl<'a> AsObjectSerializer<'a> for JSONSerializer {
-    type ObjectSerializer = JSONObjectSerializer<'a>;
-    fn begin_object(&'a mut self) -> Self::ObjectSerializer {
-        self.s.push_str("{\n");
-        self.indentation += 4;
-        JSONObjectSerializer {
-            need_to_pop_comma: false,
-            serializer: self,
-        }
-    }
-}
-
-impl<'a> ObjectSerializer for JSONObjectSerializer<'a> {
-    fn property<V: Serialize>(&mut self, name: &str, value: &V) {
-        let serializer = &mut self.serializer;
-        serializer.s.push('\n');
-        serializer.indent();
-        name.serialize(*serializer);
-        serializer.s.push_str(": ");
-        value.serialize(*serializer);
-        serializer.s.push_str(", ");
-        self.need_to_pop_comma = true;
-    }
-
-    fn end_object(self) {
-        let serializer = self.serializer;
-        serializer.indentation -= 4;
-        serializer.s.pop();
-
-        if self.need_to_pop_comma {
-            serializer.s.pop();
-            serializer.s.push('\n');
-            serializer.indent()
-        }
-        serializer.s.push_str("}");
-    }
-}
-
-pub struct JSONArraySerializer<'a> {
-    need_to_pop_comma: bool,
-    serializer: &'a mut JSONSerializer,
-}
-
-impl<'a> AsArraySerializer<'a> for JSONSerializer {
-    type ArraySerializer = JSONArraySerializer<'a>;
-    fn begin_array(&'a mut self) -> Self::ArraySerializer {
+    fn begin_array(&mut self) {
         self.s.push_str("[");
-        JSONArraySerializer {
-            need_to_pop_comma: false,
-            serializer: self,
-        }
-    }
-}
-
-impl<'a> ArraySerializer for JSONArraySerializer<'a> {
-    fn value<V: Serialize>(&mut self, value: &V) {
-        value.serialize(self.serializer);
-        self.serializer.s.push(',');
-        self.serializer.s.push(' ');
-        self.need_to_pop_comma = true;
+        self.just_began_object_or_array = true;
     }
 
-    fn end_array(self) {
-        if self.need_to_pop_comma {
-            self.serializer.s.pop();
-            self.serializer.s.pop();
+    fn begin_object(&mut self) {
+        self.s.push('{');
+        self.indentation += 4;
+        self.just_began_object_or_array = true;
+    }
+
+    fn property<V: Serialize<Self>>(&mut self, name: &str, value: &V) {
+        if !self.just_began_object_or_array {
+            self.s.push(',');
         }
-        self.serializer.s.push(']');
+        self.just_began_object_or_array = false;
+        self.s.push('\n');
+        self.indent();
+        name.serialize(self);
+        self.s.push_str(": ");
+        value.serialize(self);
+    }
+
+    fn end_object(&mut self) {
+        self.indentation -= 4;
+        self.s.push('\n');
+        self.indent();
+        self.s.push('}');
+    }
+
+    fn value<V: Serialize<Self>>(&mut self, value: &V) {
+        if !self.just_began_object_or_array {
+            self.s += ", "
+        }
+        self.just_began_object_or_array = false;
+        value.serialize(self);
+    }
+
+    fn end_array(&mut self) {
+        self.s.push(']');
+    }
+
+    fn get_context_mut(&mut self) -> &mut Self::Context {
+        &mut self.context
     }
 }
 
 pub trait ToJson: Sized {
     fn to_json(&self) -> String;
 }
-impl<T: Serialize> ToJson for T {
+impl<T: Serialize<JSONSerializer<()>>> ToJson for T {
     fn to_json(&self) -> String {
         let mut serializer = JSONSerializer::new();
         self.serialize(&mut serializer);

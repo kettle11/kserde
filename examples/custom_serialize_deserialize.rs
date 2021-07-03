@@ -5,17 +5,19 @@ struct Person {
     age: i64,
 }
 
-impl Serialize for Person {
-    fn serialize<E: Serializer>(&self, serializer: &mut E) {
-        let mut object = serializer.begin_object();
-        object.property("name", &self.name);
-        object.property("age", &self.age);
-        object.end_object();
+trait TestTrait {}
+
+impl<S: Serializer> Serialize<S> for Person {
+    fn serialize(&self, serializer: &mut S) {
+        serializer.begin_object();
+        serializer.property("name", &self.name);
+        serializer.property("age", &self.age);
+        serializer.end_object();
     }
 }
 
-impl<'a> Deserialize<'a> for Person {
-    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+impl<'a, D: Deserializer<'a>> Deserialize<'a, D> for Person {
+    fn deserialize(deserializer: &mut D) -> Option<Self> {
         deserializer.begin_object().then(|| {})?;
 
         let mut name: Option<String> = None;

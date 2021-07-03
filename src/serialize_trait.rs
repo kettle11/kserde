@@ -1,10 +1,14 @@
 use std::collections::HashMap;
 
-pub trait Serializer:
-    for<'a> AsObjectSerializer<'a> + for<'a> AsArraySerializer<'a> + Sized
-{
+pub trait Serialize<S: Serializer> {
+    fn serialize(&self, serializer: &mut S);
+}
+
+pub trait Serializer: Sized {
     type Result;
-    fn new() -> Self;
+    type Context;
+
+    //fn new() -> Self;
     fn string(&mut self, s: &str);
     fn bool(&mut self, b: bool);
     fn i64(&mut self, i: i64);
@@ -12,136 +16,126 @@ pub trait Serializer:
     fn null(&mut self);
 
     /// Serialize a value that implements Serialize.
-    fn serialize<V: Serialize>(&mut self, value: &V) {
+    fn serialize<V: Serialize<Self>>(&mut self, value: &V) {
         V::serialize(value, self);
     }
     fn done(self) -> Self::Result;
+
+    fn begin_object(&mut self);
+    fn end_object(&mut self);
+    /// Only call this in-between [begin_object] and [end_object] calls
+    fn property<V: Serialize<Self>>(&mut self, name: &str, value: &V);
+
+    fn begin_array(&mut self);
+    fn end_array(&mut self);
+    /// Only call this in-between [begin_array] and [end_array] calls
+    fn value<V: Serialize<Self>>(&mut self, value: &V);
+
+    fn get_context_mut(&mut self) -> &mut Self::Context;
 }
 
-pub trait AsObjectSerializer<'a> {
-    type ObjectSerializer: ObjectSerializer;
-    fn begin_object(&'a mut self) -> Self::ObjectSerializer;
-}
-
-pub trait AsArraySerializer<'a> {
-    type ArraySerializer: ArraySerializer;
-    fn begin_array(&'a mut self) -> Self::ArraySerializer;
-}
-
-pub trait ObjectSerializer {
-    fn property<V: Serialize>(&mut self, name: &str, value: &V);
-    fn end_object(self);
-}
-
-pub trait ArraySerializer {
-    fn value<V: Serialize>(&mut self, value: &V);
-    fn end_array(self);
-}
-
-pub trait Serialize {
-    fn serialize<S: Serializer>(&self, serializer: &mut S);
-}
-
-impl Serialize for &str {
-    fn serialize<S: Serializer>(&self, serializer: &mut S) {
+impl<S: Serializer> Serialize<S> for &str {
+    fn serialize(&self, serializer: &mut S) {
         serializer.string(self)
     }
 }
 
-impl Serialize for String {
-    fn serialize<S: Serializer>(&self, serializer: &mut S) {
+impl<S: Serializer> Serialize<S> for String {
+    fn serialize(&self, serializer: &mut S) {
         serializer.string(self)
     }
 }
 
-impl Serialize for i32 {
+impl<S: Serializer> Serialize<S> for i32 {
     #[inline]
-    fn serialize<S: Serializer>(&self, serializer: &mut S) {
+    fn serialize(&self, serializer: &mut S) {
         serializer.i64(*self as i64)
     }
 }
 
-impl Serialize for i64 {
+impl<S: Serializer> Serialize<S> for i64 {
     #[inline]
-    fn serialize<S: Serializer>(&self, serializer: &mut S) {
+    fn serialize(&self, serializer: &mut S) {
         serializer.i64(*self)
     }
 }
 
-impl Serialize for usize {
+impl<S: Serializer> Serialize<S> for usize {
     #[inline]
-    fn serialize<S: Serializer>(&self, serializer: &mut S) {
+    fn serialize(&self, serializer: &mut S) {
         serializer.i64(*self as i64)
     }
 }
 
-impl Serialize for f32 {
+impl<S: Serializer> Serialize<S> for f32 {
     #[inline]
-    fn serialize<S: Serializer>(&self, serializer: &mut S) {
+    fn serialize(&self, serializer: &mut S) {
         serializer.f64(*self as f64)
     }
 }
 
-impl Serialize for f64 {
+impl<S: Serializer> Serialize<S> for f64 {
     #[inline]
-    fn serialize<S: Serializer>(&self, serializer: &mut S) {
+    fn serialize(&self, serializer: &mut S) {
         serializer.f64(*self)
     }
 }
 
-impl Serialize for bool {
+impl<S: Serializer> Serialize<S> for bool {
     #[inline]
-    fn serialize<S: Serializer>(&self, serializer: &mut S) {
+    fn serialize(&self, serializer: &mut S) {
         serializer.bool(*self)
     }
 }
 
-impl<SERIALIZE: Serialize> Serialize for [SERIALIZE] {
+impl<S: Serializer, SERIALIZE: Serialize<S>> Serialize<S> for [SERIALIZE] {
     #[inline]
-    fn serialize<S: Serializer>(&self, serializer: &mut S) {
-        let mut array_serializer = serializer.begin_array();
+    fn serialize(&self, serializer: &mut S) {
+        serializer.begin_array();
         for value in self {
-            array_serializer.value(value);
+            serializer.value(value);
         }
-        array_serializer.end_array();
+        serializer.end_array();
     }
 }
 
-impl<SERIALIZE: Serialize, const SIZE: usize> Serialize for [SERIALIZE; SIZE] {
+impl<S: Serializer, SERIALIZE: Serialize<S>, const SIZE: usize> Serialize<S> for [SERIALIZE; SIZE] {
     #[inline]
-    fn serialize<S: Serializer>(&self, serializer: &mut S) {
-        let mut array_serializer = serializer.begin_array();
+    fn serialize(&self, serializer: &mut S) {
+        serializer.begin_array();
         for value in self {
-            array_serializer.value(value);
+            serializer.value(value);
         }
-        array_serializer.end_array();
+        serializer.end_array();
     }
 }
 
-impl<SERIALIZE: Serialize> Serialize for Vec<SERIALIZE> {
+impl<S: Serializer, SERIALIZE: Serialize<S>> Serialize<S> for Vec<SERIALIZE> {
     #[inline]
-    fn serialize<S: Serializer>(&self, serializer: &mut S) {
-        let mut array_serializer = serializer.begin_array();
+    fn serialize(&self, serializer: &mut S) {
+        serializer.begin_array();
         for value in self {
-            array_serializer.value(value);
+            serializer.value(value);
         }
-        array_serializer.end_array();
+        serializer.end_array();
     }
 }
 
-impl<STRING: std::ops::Deref<Target = str>, V: Serialize> Serialize for HashMap<STRING, V> {
-    fn serialize<S: Serializer>(&self, serializer: &mut S) {
-        let mut object_serializer = serializer.begin_object();
+impl<S: Serializer, STRING: std::ops::Deref<Target = str>, V: Serialize<S>> Serialize<S>
+    for HashMap<STRING, V>
+{
+    fn serialize(&self, serializer: &mut S) {
+        serializer.begin_object();
         for (key, value) in self.into_iter() {
-            object_serializer.property(key, value);
+            serializer.property(key, value);
         }
-        object_serializer.end_object();
+        serializer.end_object();
     }
 }
 
-impl<SERIALIZE: Serialize> Serialize for Option<SERIALIZE> {
+impl<S: Serializer, SERIALIZE: Serialize<S>> Serialize<S> for Option<SERIALIZE> {
     #[inline]
-    fn serialize<S: Serializer>(&self, serializer: &mut S) {
+    fn serialize(&self, serializer: &mut S) {
         if let Some(s) = self {
             s.serialize(serializer);
         } else {

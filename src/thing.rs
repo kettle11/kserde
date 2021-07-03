@@ -1,5 +1,3 @@
-use crate::serialize_trait::ArraySerializer;
-use crate::serialize_trait::ObjectSerializer;
 use crate::{AnyValue, Deserialize, Deserializer, JSONDeserializer, Serialize, Serializer};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -97,8 +95,8 @@ impl<'a> Thing<'a> {
     }
 }
 
-impl<'a> Deserialize<'a> for Thing<'a> {
-    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+impl<'a, D: Deserializer<'a>> Deserialize<'a, D> for Thing<'a> {
+    fn deserialize(deserializer: &mut D) -> Option<Self> {
         Some(match deserializer.any()? {
             AnyValue::Object => {
                 let mut items = HashMap::new();
@@ -128,33 +126,33 @@ impl<'a> Deserialize<'a> for Thing<'a> {
     }
 }
 
-impl<'a> Deserialize<'a> for ThingOwned {
-    fn deserialize<D: Deserializer<'a>>(deserializer: &mut D) -> Option<Self> {
+impl<'a, D: Deserializer<'a>> Deserialize<'a, D> for ThingOwned {
+    fn deserialize(deserializer: &mut D) -> Option<Self> {
         <Thing<'a>>::deserialize(deserializer).map(|t| t.to_owned())
     }
 }
 
-impl<'a> Serialize for Thing<'a> {
-    fn serialize<S: Serializer>(&self, serializer: &mut S) {
+impl<'a, S: Serializer> Serialize<S> for Thing<'a> {
+    fn serialize(&self, serializer: &mut S) {
         match self {
             Self::Object(o) => {
-                let mut object = serializer.begin_object();
+                serializer.begin_object();
                 // This allocation and sorting probably isn't ideal,
                 // The alternative is to use a sorted HashMap when deserializing
                 // into Thing.
                 let mut properties: Vec<_> = o.iter().collect();
                 properties.sort_by_key(|(_, i)| i.index);
                 for (key, value) in o.iter() {
-                    object.property(key, &value.item);
+                    serializer.property(key, &value.item);
                 }
-                object.end_object();
+                serializer.end_object();
             }
             Self::Array(a) => {
-                let mut array = serializer.begin_array();
+                serializer.begin_array();
                 for value in a.iter() {
-                    array.value(value);
+                    serializer.value(value);
                 }
-                array.end_array();
+                serializer.end_array();
             }
             Self::Number(n) => serializer.f64(*n),
             Self::Bool(b) => serializer.bool(*b),
@@ -164,27 +162,27 @@ impl<'a> Serialize for Thing<'a> {
     }
 }
 
-impl<'a> Serialize for ThingOwned {
-    fn serialize<S: Serializer>(&self, serializer: &mut S) {
+impl<'a, S: Serializer> Serialize<S> for ThingOwned {
+    fn serialize(&self, serializer: &mut S) {
         match self {
             Self::Object(o) => {
-                let mut object = serializer.begin_object();
+                serializer.begin_object();
                 // This allocation and sorting probably isn't ideal,
                 // The alternative is to use a sorted HashMap when deserializing
                 // into Thing.
                 let mut properties: Vec<_> = o.iter().collect();
                 properties.sort_by_key(|(_, i)| i.index);
                 for (key, value) in o.iter() {
-                    object.property(key, &value.item);
+                    serializer.property(key, &value.item);
                 }
-                object.end_object();
+                serializer.end_object();
             }
             Self::Array(a) => {
-                let mut array = serializer.begin_array();
+                serializer.begin_array();
                 for value in a.iter() {
-                    array.value(value);
+                    serializer.value(value);
                 }
-                array.end_array();
+                serializer.end_array();
             }
             Self::Number(n) => serializer.f64(*n),
             Self::Bool(b) => serializer.bool(*b),
