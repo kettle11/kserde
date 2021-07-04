@@ -105,6 +105,10 @@ impl<CONTEXT> Serializer for JSONSerializer<CONTEXT> {
         self.s.push(']');
     }
 
+    fn get_context(&self) -> &Self::Context {
+        &self.context
+    }
+
     fn get_context_mut(&mut self) -> &mut Self::Context {
         &mut self.context
     }

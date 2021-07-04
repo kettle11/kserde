@@ -1,41 +1,55 @@
-use kreflect::*;
+use std::borrow::Cow;
+
+use kreflect_common::*;
+
+fn serialize_fields(properties: &mut String, fields: &Vec<Field>) {
+    for (i, field) in fields.iter().enumerate() {
+        let skip = field_contains_attribute(field, "skip");
+        if !skip {
+            if let Some(name) = field.name.as_ref() {
+                *properties += &format!("    serializer.property(\"{}\", &self.{});\n", name, name);
+            } else {
+                *properties += &format!("    serializer.property(\"{}\", &self.{});\n", i, i);
+            }
+        }
+    }
+}
 
 pub fn kserde_serialize_impl(value: &Value) -> String {
     match value {
         Value::Struct(_struct) => {
-            let mut lifetimes_and_generics = String::new();
-            for lifetime in &_struct.generic_lifetimes {
-                lifetimes_and_generics.push('\'');
-                lifetimes_and_generics += lifetime;
-                lifetimes_and_generics.push(',');
-            }
-            for generic in &_struct.generic_types {
-                lifetimes_and_generics += generic;
-                lifetimes_and_generics.push(',');
-            }
+            let (generic_lifetimes, mut generic_types, generic_consts) =
+                _struct.generic_parameters.lifetimes_types_consts();
+
+            generic_types += "KSer: kserde::Serializer, ";
+
+            let generic_args = _struct.generic_parameters.as_args();
 
             let mut properties = String::new();
             match &_struct.fields {
                 Fields::Struct(fields) => {
-                    for field in fields {
-                        let name = field.name.as_ref().unwrap();
-                        properties +=
-                            &format!("    object.property(\"{}\", &self.{});\n", name, name);
-                    }
+                    serialize_fields(&mut properties, fields);
                 }
-                Fields::Tuple(_) => todo!(),
+                Fields::Tuple(fields) => {
+                    serialize_fields(&mut properties, fields);
+                }
                 Fields::Unit => todo!(),
             }
 
             format!(
-                r#"impl<{}> Serialize for {}<{}> {{
-    fn serialize<E: Serializer>(&self, serializer: &mut E) {{
-        let mut object = serializer.begin_object();
+                r#"impl<{}{}{}> kserde::Serialize<KSer> for {}<{}> {{
+    fn serialize(&self, serializer: &mut KSer) {{
+        serializer.begin_object();
 {}
-        object.end_object();
+        serializer.end_object();
     }}
 }}"#,
-                lifetimes_and_generics, _struct.name, lifetimes_and_generics, properties
+                generic_lifetimes,
+                generic_types,
+                &generic_consts,
+                _struct.name,
+                generic_args,
+                properties
             )
         }
         Value::Enum(_) => {
@@ -44,54 +58,82 @@ pub fn kserde_serialize_impl(value: &Value) -> String {
     }
 }
 
+pub fn deserialize_fields(
+    properties_declaration: &mut String,
+    deserialize_match: &mut String,
+    property_assignment: &mut String,
+    fields: &Vec<Field>,
+) {
+    for (i, field) in fields.iter().enumerate() {
+        let name: Cow<str> = if let Some(field_name) = field.name.as_ref() {
+            field_name.clone()
+        } else {
+            i.to_string().into()
+        };
+        let _type = field._type.as_string();
+
+        let skip = field_contains_attribute(field, "skip");
+
+        if !skip {
+            if _type.get(0..6).map_or(false, |s| s == "Option") {
+                *properties_declaration += &format!("    let mut f_{}: {} = None;\n", name, _type);
+                *deserialize_match += &format!(
+                    "                \"{}\" => f_{} = Some(<{}>::deserialize(deserializer)?),\n",
+                    name,
+                    name,
+                    &_type[7.._type.len() - 1]
+                );
+                *property_assignment += &format!("    {}: f_{},\n", name, name);
+            } else {
+                *properties_declaration +=
+                    &format!("    let mut f_{}: Option<{}> = None;\n", name, _type);
+                *deserialize_match += &format!(
+                    "                \"{}\" => f_{} = Some(<{}>::deserialize(deserializer)?),\n",
+                    name, name, _type
+                );
+                *property_assignment += &format!("        {}: f_{}?,\n", name, name);
+            }
+        } else {
+            // Assign a default value to the property if it's skipped.
+            *property_assignment +=
+                &format!("        {}: std::default::Default::default(),\n", name);
+        }
+    }
+}
+
 pub fn kserde_deserialize_impl(value: &Value) -> String {
     match value {
         Value::Struct(_struct) => {
-            let mut lifetimes_and_generics = String::new();
-            for lifetime in &_struct.generic_lifetimes {
-                lifetimes_and_generics.push('\'');
-                lifetimes_and_generics += lifetime;
-                lifetimes_and_generics.push(',');
-            }
-            for generic in &_struct.generic_types {
-                lifetimes_and_generics += generic;
-                lifetimes_and_generics.push(',');
-            }
+            let (mut generic_lifetimes, mut generic_types, generic_consts) =
+                _struct.generic_parameters.lifetimes_types_consts();
+
+            generic_lifetimes += "'kserde, ";
+            generic_types += "KDes: kserde::Deserializer<'kserde>, ";
+
+            let generic_args = _struct.generic_parameters.as_args();
 
             let mut deserialize_match = String::new();
             let mut properties_declaration = String::new();
             let mut property_assignment = String::new();
 
             match &_struct.fields {
-                Fields::Struct(fields) => {
-                    for field in fields {
-                        let name = field.name.as_ref().unwrap();
-                        let _type = field._type.as_string();
-                        if _type.get(0..6).map_or(false, |s| s == "Option") {
-                            properties_declaration +=
-                                &format!("    let mut {}: {} = None;\n", name, _type);
-                            property_assignment += &format!("    {},\n", name);
-                            deserialize_match += &format!(
-                                "                \"{}\" => {} = Some(<{}>::deserialize(deserializer)?),\n",
-                                name, name, &_type[7.._type.len() - 1]
-                            );
-                        } else {
-                            properties_declaration +=
-                                &format!("    let mut {}: Option<{}> = None;\n", name, _type);
-                            property_assignment += &format!("        {}: {}?,\n", name, name);
-                            deserialize_match += &format!(
-                                "                \"{}\" => {} = Some(<{}>::deserialize(deserializer)?),\n",
-                                name, name, _type
-                            );
-                        }
-                    }
-                }
-                Fields::Tuple(_) => todo!(),
+                Fields::Struct(fields) => deserialize_fields(
+                    &mut properties_declaration,
+                    &mut deserialize_match,
+                    &mut property_assignment,
+                    fields,
+                ),
+                Fields::Tuple(fields) => deserialize_fields(
+                    &mut properties_declaration,
+                    &mut deserialize_match,
+                    &mut property_assignment,
+                    fields,
+                ),
                 Fields::Unit => todo!(),
             }
             format!(
-                r#"impl<'kserde, {}> Deserialize<'kserde> for {}<{}> {{
-    fn deserialize<D: Deserializer<'kserde>>(deserializer: &mut D) -> Option<Self> {{
+                r#"impl<{}{}{}> kserde::Deserialize<'kserde, KDes> for {}<{}> {{
+    fn deserialize(deserializer: &mut KDes) -> Option<Self> {{
         deserializer.begin_object().then(|| {{}})?;
 {}
         while let Some(p) = deserializer.has_property() {{
@@ -104,9 +146,11 @@ pub fn kserde_deserialize_impl(value: &Value) -> String {
         }})
     }}
 }}"#,
-                lifetimes_and_generics,
+                generic_lifetimes,
+                generic_types,
+                &generic_consts,
                 _struct.name,
-                lifetimes_and_generics,
+                generic_args,
                 properties_declaration,
                 deserialize_match,
                 property_assignment
@@ -118,17 +162,25 @@ pub fn kserde_deserialize_impl(value: &Value) -> String {
     }
 }
 
+/// Check if a [Field] contains an attribute name.
+fn field_contains_attribute(field: &Field, attribute: &str) -> bool {
+    field
+        .attributes
+        .iter()
+        .any(|a| a.path.segments.iter().any(|s| s.name == attribute))
+}
+
 #[test]
 fn kersde_impl() {
     let value = Value::Struct(Struct {
         name: "Thing".into(),
         visibility: Visibility::Private,
-        generic_lifetimes: Vec::new(),
-        generic_types: Vec::new(),
+        generic_parameters: GenericParams(Vec::new()),
         fields: Fields::Struct(vec![Field {
             name: Some("x".into()),
             _type: Type::Name(Path::new(&["f32".into()])),
             visibility: Visibility::Pub,
+            attributes: Vec::new(),
         }]),
     });
 

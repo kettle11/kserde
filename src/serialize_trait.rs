@@ -31,6 +31,7 @@ pub trait Serializer: Sized {
     /// Only call this in-between [begin_array] and [end_array] calls
     fn value<V: Serialize<Self>>(&mut self, value: &V);
 
+    fn get_context(&self) -> &Self::Context;
     fn get_context_mut(&mut self) -> &mut Self::Context;
 }
 

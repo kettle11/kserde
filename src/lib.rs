@@ -17,3 +17,6 @@ mod json {
 }
 
 pub use json::*;
+
+#[cfg(feature = "kserde_derive")]
+pub use kserde_derive::*;
